@@ -14,14 +14,8 @@ const PVP_NAMES = ['Shadow_X','GrindKing','Nova_88','PixelWarrior','ThunderPaw',
 // Challenge-locked emoji (special, removed from regular shop browse)
 const ROCK_EMOJI = '🪨';
 
-// Match tier definitions: 1 token entry, ELO change displayed
-// We'll show 4 tiers but they're cosmetic differences in opponent strength + reward
-const MATCH_TIERS = [
-  { label:'Casual',     entry:1, oppElo:950,  prize:2 },
-  { label:'Standard',   entry:2, oppElo:1100, prize:4 },
-  { label:'High Stakes',entry:3, oppElo:1300, prize:6 },
-  { label:'Elite',      entry:5, oppElo:1500, prize:10 },
-];
+// Single PvP tier - one match option
+const PVP_TIER = { label:'Ranked', entry:2, oppElo:1100, prize:4 };
 
 const ELO_TIERS = [
   { name:'Bronze',      min:0,    max:1000, color:'#cd7f32' },
@@ -58,8 +52,6 @@ const DEFAULT_STATE = {
 let state = loadState();
 let runtime = {
   searchTimer: null,
-  currentTier: MATCH_TIERS[0],
-  selectedEntryEl: null,
   gameState: null,
   currentMode: 'pvp',
   activeTourney: null,
@@ -77,13 +69,12 @@ function loadState() {
     const v2 = localStorage.getItem('rps-arena-state-v2');
     if (v2) {
       const old = JSON.parse(v2);
-      // convert coins to tokens roughly: balance / 50 (since old prices were 10-500, new is 1-5)
       const newBalance = Math.max(10, Math.floor((old.balance || 1000) / 100));
       return {
         ...DEFAULT_STATE,
         username: old.username || 'Player',
         avatar: old.avatar || '😀',
-        ownedEmojis: (old.ownedEmojis || ['😀']).filter(e => e !== '🪨'), // strip rock if owned
+        ownedEmojis: (old.ownedEmojis || ['😀']).filter(e => e !== '🪨'),
         balance: newBalance,
         elo: old.elo || 1000,
         wins: old.wins || 0,
@@ -107,6 +98,19 @@ function beats(a,b){return(a==='rock'&&b==='scissors')||(a==='paper'&&b==='rock'
 function botName(){return rnd(BOT_NAMES)}
 function pvpName(){return rnd(PVP_NAMES)}
 
+// Random bot avatar - excludes Rock (challenge-locked)
+function randomBotEmoji() {
+  const pool = EMOJI_CATALOG.filter(e => e.e !== ROCK_EMOJI);
+  return pool[Math.floor(Math.random() * pool.length)].e;
+}
+
+// Random opponent ELO near the player's rating, for PvP display
+function randomOppEloNear(playerElo) {
+  // ±150 range, but never below 100
+  const variance = Math.floor(Math.random() * 301) - 150; // -150 to +150
+  return Math.max(100, playerElo + variance);
+}
+
 function getTier(elo) {
   for (const t of ELO_TIERS) {
     if (elo >= t.min && elo < t.max) return t;
@@ -122,10 +126,8 @@ function todayKey() {
 function refreshFeatured() {
   const today = todayKey();
   if (state.featuredDate === today && state.featuredEmojis && state.featuredEmojis.length > 0) return;
-  // Pick 4 random emojis from the catalog (excluding rock)
   const pool = EMOJI_CATALOG.filter(e => e.e !== ROCK_EMOJI);
   const seed = today.split('-').reduce((a,b) => a + parseInt(b), 0);
-  // deterministic selection per day
   const picks = [];
   let s = seed;
   const seen = new Set();
@@ -153,6 +155,10 @@ function showView(id) {
   if (idx !== undefined) document.querySelectorAll('.nav-btn')[idx].classList.add('active');
   document.querySelector('.view-wrap').scrollTop = 0;
   if (id === 'lobby') hideLobbySections();
+  // Hide header + nav when in game view
+  const app = document.getElementById('app');
+  if (id === 'game') app.classList.add('in-game');
+  else app.classList.remove('in-game');
   updateHeader();
 }
 
@@ -161,7 +167,7 @@ function showLobbySection(name) {
   document.getElementById('lobby-tourney').style.display = name === 'tourney' ? 'flex' : 'none';
   document.getElementById('lobby-bracket').style.display = 'none';
   document.getElementById('pvp-searching').style.display = 'none';
-  if (name === 'pvp') renderMatchOptions();
+  if (name === 'pvp') renderPvpInfo();
   if (name === 'tourney') renderTourneyList();
   setTimeout(() => {
     const el = document.getElementById('lobby-' + name);
@@ -217,34 +223,19 @@ function toast(msg) {
   setTimeout(() => t.classList.remove('show'), 2400);
 }
 
-/* MATCH OPTIONS */
-function renderMatchOptions() {
-  const el = document.getElementById('match-options-grid');
-  el.innerHTML = MATCH_TIERS.map((tier, i) => {
-    const eloUp = calculateEloChange(state.elo, tier.oppElo, true, false);
-    const eloDown = calculateEloChange(state.elo, tier.oppElo, false, false);
-    return `
-      <div class="match-opt ${i===0 ? 'selected':''}" data-idx="${i}" onclick="selectTier(this, ${i})">
-        <div class="match-opt-label">${tier.label}</div>
-        <div class="match-opt-prize">▣ ${tier.prize}</div>
-        <div class="match-opt-entry">Entry: ${tier.entry} token${tier.entry>1?'s':''}</div>
-        <div class="match-opt-elo">+${eloUp} / <span class="neg">${eloDown}</span> ELO</div>
-      </div>
-    `;
-  }).join('');
-  runtime.selectedEntryEl = el.querySelector('.match-opt.selected');
-  runtime.currentTier = MATCH_TIERS[0];
-}
-
-function selectTier(el, idx) {
-  if (runtime.selectedEntryEl) runtime.selectedEntryEl.classList.remove('selected');
-  el.classList.add('selected');
-  runtime.selectedEntryEl = el;
-  runtime.currentTier = MATCH_TIERS[idx];
+/* PvP single match info card */
+function renderPvpInfo() {
+  const t = PVP_TIER;
+  const eloUp = calculateEloChange(state.elo, t.oppElo, true, false);
+  const eloDown = calculateEloChange(state.elo, t.oppElo, false, false);
+  document.getElementById('pvp-prize-display').textContent = '▣ ' + t.prize;
+  document.getElementById('pvp-entry-display').textContent = `Entry: ${t.entry} token${t.entry>1?'s':''}`;
+  document.getElementById('pvp-elo-up').textContent = '+' + eloUp;
+  document.getElementById('pvp-elo-down').textContent = eloDown;
 }
 
 function startFindMatch() {
-  const tier = runtime.currentTier;
+  const tier = PVP_TIER;
   const e = document.getElementById('pvp-error');
   if (state.balance < tier.entry) {
     e.textContent = `Not enough tokens! Need ${tier.entry}.`;
@@ -257,13 +248,16 @@ function startFindMatch() {
   document.getElementById('pvp-searching').style.display = 'block';
   document.getElementById('search-entry-display').textContent = tier.entry + (tier.entry>1?' tokens':' token');
   runtime.searchTimer = setTimeout(() => {
-    startGame('pvp', tier.entry, tier.prize, pvpName(), '🤖', 3, tier.oppElo);
+    // For PvP, randomize opponent ELO near the player's rating to feel like real matchmaking
+    const oppElo = randomOppEloNear(state.elo);
+    const oppEmoji = randomBotEmoji();
+    startGame('pvp', tier.entry, tier.prize, pvpName(), oppEmoji, 3, oppElo);
   }, Math.random() * 2000 + 1200);
 }
 
 function cancelSearch() {
   clearTimeout(runtime.searchTimer);
-  state.balance += runtime.currentTier.entry; updateBalance();
+  state.balance += PVP_TIER.entry; updateBalance();
   document.getElementById('pvp-searching').style.display = 'none';
   document.getElementById('lobby-pvp').style.display = 'flex';
   toast('Entry refunded');
@@ -291,6 +285,19 @@ function startGame(mode, entry, prize, oppN, oppAvatar='🤖', bo=3, oppElo=1000
   document.getElementById('round-result').className = 'choice-result';
   closeResultPopup();
   ['btn-rock','btn-paper','btn-scissors'].forEach(id => document.getElementById(id).disabled = false);
+
+  // Show ELO during PvP matches only
+  const youEloEl = document.getElementById('you-elo');
+  const oppEloEl = document.getElementById('opp-elo');
+  if (mode === 'pvp') {
+    youEloEl.style.display = 'block';
+    oppEloEl.style.display = 'block';
+    youEloEl.querySelector('.num').textContent = state.elo;
+    oppEloEl.querySelector('.num').textContent = oppElo;
+  } else {
+    youEloEl.style.display = 'none';
+    oppEloEl.style.display = 'none';
+  }
 
   const streakHud = document.getElementById('streak-hud');
   if (mode === 'streak') {
@@ -354,7 +361,6 @@ function showResultPopup(type, opts) {
   const overlay = document.getElementById('result-popup-overlay');
   const popup = document.getElementById('result-popup');
   popup.className = 'result-popup ' + type;
-  document.getElementById('result-emoji').textContent = opts.emoji || (type === 'win' ? '🏆' : type === 'lose' ? '💀' : '🤝');
   document.getElementById('result-title').textContent = opts.title || '';
   document.getElementById('result-detail').innerHTML = opts.detail || '';
   const eloEl = document.getElementById('elo-change-display');
@@ -426,46 +432,59 @@ function endGame(g) {
     if (won) {
       state.wins++;
       type = 'win'; title = 'ADVANCED!'; detail = 'You move on in the bracket';
+      actions = '<button class="primary" onclick="closeResultPopup();onTourneyMatchContinue(true)">Continue</button>';
     } else if (draw) {
-      type = 'draw'; title = 'DRAW'; detail = 'Replaying...';
+      // Tied at 1-1 in best-of-3 means we need a tiebreak rematch
+      type = 'draw'; title = 'TIED'; detail = 'Replaying for the tiebreak…';
+      actions = '<button class="primary" onclick="closeResultPopup();rematchTourneyDraw()">Rematch</button>';
     } else {
       type = 'lose'; title = 'ELIMINATED'; detail = 'Your tournament run ends here';
+      actions = '<button class="primary" onclick="closeResultPopup();onTourneyMatchContinue(false)">Continue</button>';
     }
-    state.history.unshift({
-      opp: g.opp, oppAvatar: g.oppAvatar,
-      result: won ? 'W' : draw ? 'D' : 'L',
-      score: g.scoreYou + '-' + g.scoreOpp,
-      eloDelta: 0, mode: 'Tourney',
-      time: new Date().toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-    });
-    if (state.history.length > 100) state.history = state.history.slice(0, 100);
+    // Only record history for decisive results (not for tiebreak draws — those replay)
+    if (!draw) {
+      state.history.unshift({
+        opp: g.opp, oppAvatar: g.oppAvatar,
+        result: won ? 'W' : 'L',
+        score: g.scoreYou + '-' + g.scoreOpp,
+        eloDelta: 0, mode: 'Tourney',
+        time: new Date().toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      });
+      if (state.history.length > 100) state.history = state.history.slice(0, 100);
+    }
     saveState();
-    showResultPopup(type, {
-      title, detail,
-      actions: '<button class="primary" onclick="closeResultPopup();onTourneyMatchContinue('+won+')">Continue</button>'
-    });
+    showResultPopup(type, { title, detail, actions });
   }
+}
+
+/* Tourney draw rematch — restart the same match keeping opponent identity */
+function rematchTourneyDraw() {
+  const g = runtime.gameState;
+  if (!g) return;
+  // Don't double-count the draw as a played game
+  state.games = Math.max(0, state.games - 1);
+  saveState();
+  startGame('tourney', g.entry, g.prize, g.opp, g.oppAvatar, g.bo, g.oppElo);
 }
 
 /* ---- STREAK MODE ---- */
 function startStreakRun() {
-  // Pick a single bot for the entire run
   state.currentStreakBot = botName();
   saveState();
-  runtime.streakState = { current: 0, strikes: 0, gamesInRun: 0 };
+  // Pick a random emoji for this run's bot
+  runtime.streakState = { current: 0, strikes: 0, gamesInRun: 0, botEmoji: randomBotEmoji() };
   startStreakMatch();
 }
 
 function startStreakMatch() {
-  startGame('streak', 0, 0, state.currentStreakBot || botName(), '🤖', 3);
+  const oppEmoji = (runtime.streakState && runtime.streakState.botEmoji) || randomBotEmoji();
+  startGame('streak', 0, 0, state.currentStreakBot || botName(), oppEmoji, 3);
 }
 
 function handleStreakEnd(won, draw) {
   const ss = runtime.streakState;
   ss.gamesInRun = (ss.gamesInRun || 0);
 
-  // Counts as ONE game in stats only at end of run, not per match
-  // So decrement the games counter that was incremented in endGame
   state.games--;
 
   let type, title, detail, actions;
@@ -477,7 +496,6 @@ function handleStreakEnd(won, draw) {
       newRecord = true;
     }
 
-    // Reward at 5+ on new high score
     let rewardEmoji = null;
     if (newRecord && ss.current >= 5 && ss.current > state.lastRewardedStreak) {
       const unowned = EMOJI_CATALOG.filter(em => !state.ownedEmojis.includes(em.e) && em.e !== ROCK_EMOJI);
@@ -518,13 +536,11 @@ function handleStreakEnd(won, draw) {
   } else {
     if (!draw) ss.strikes++;
     if (ss.strikes >= 2) {
-      // Run over - count one game in stats
       state.games++;
       saveState();
-      // Add ONE history entry summarizing the run
       state.history.unshift({
         opp: state.currentStreakBot,
-        oppAvatar: '🤖',
+        oppAvatar: ss.botEmoji || '🤖',
         result: ss.current > 0 ? 'W' : 'L',
         score: 'Streak: ' + ss.current,
         eloDelta: 0, mode: 'Streak',
@@ -573,10 +589,11 @@ function leaveGame() {
 
 /* ---- TOURNAMENTS ---- */
 const TOURNEY_TEMPLATES = [
-  { name: 'Beginner Bash', entry: 1, prize: 6, slots: 7 },
-  { name: 'Weekend Brawl', entry: 2, prize: 12, slots: 5 },
-  { name: 'Coin Clashers', entry: 3, prize: 20, slots: 6 },
-  { name: 'Elite Cup', entry: 5, prize: 35, slots: 3 },
+  { name: 'Beginner Bash',  entry: 1,  prize: 6,  slots: 7, special: false },
+  { name: 'Weekend Brawl',  entry: 2,  prize: 12, slots: 5, special: false },
+  { name: 'Coin Clashers',  entry: 3,  prize: 20, slots: 6, special: false },
+  { name: 'Elite Cup',      entry: 5,  prize: 35, slots: 3, special: false },
+  { name: 'Mystery Emoji Cup', entry: 10, prize: 0, slots: 4, special: 'emoji' },
 ];
 
 function initTourneys() {
@@ -584,6 +601,16 @@ function initTourneys() {
     state.tournaments = TOURNEY_TEMPLATES.map((t, i) => ({
       ...t, id: i, joined: false, bracket: null, complete: false,
     }));
+    saveState();
+  } else {
+    // Migrate: ensure newer templates exist
+    for (let i = 0; i < TOURNEY_TEMPLATES.length; i++) {
+      if (!state.tournaments[i]) {
+        state.tournaments[i] = { ...TOURNEY_TEMPLATES[i], id: i, joined: false, bracket: null, complete: false };
+      } else if (state.tournaments[i].special === undefined) {
+        state.tournaments[i].special = TOURNEY_TEMPLATES[i].special || false;
+      }
+    }
     saveState();
   }
 }
@@ -594,10 +621,15 @@ function renderTourneyList() {
   el.innerHTML = state.tournaments.map(t => {
     const status = t.complete ? '<span style="font-size:10px;background:rgba(136,136,136,.2);color:var(--muted);padding:2px 6px;border-radius:3px">DONE</span>'
       : t.joined ? '<span style="font-size:10px;background:rgba(201,168,76,.2);color:var(--gold);padding:2px 6px;border-radius:3px">JOINED</span>' : '';
+    const specialBadge = t.special === 'emoji' ? '<span style="font-size:10px;background:rgba(169,107,255,.2);color:var(--epic);padding:2px 6px;border-radius:3px">SPECIAL</span>' : '';
+    const prizeDisplay = t.special === 'emoji'
+      ? `<div class="tourney-prize emoji-prize">🎁</div><div class="tourney-entry">Mystery Emoji</div>`
+      : `<div class="tourney-prize">🏆 ${t.prize}</div><div class="tourney-entry">Prize Pool</div>`;
+    const cardClass = 'tourney-card' + (t.joined ? ' active-tourney' : '') + (t.special ? ' special' : '');
     return `
-      <div class="tourney-card ${t.joined ? 'active-tourney' : ''}">
+      <div class="${cardClass}">
         <div class="tourney-info">
-          <div class="tourney-name">${t.name} ${status}</div>
+          <div class="tourney-name">${t.name} ${specialBadge} ${status}</div>
           <div class="tourney-meta">
             <span>▣ ${t.entry} entry</span>
             <span>👥 ${t.slots} spots</span>
@@ -605,8 +637,7 @@ function renderTourneyList() {
           </div>
         </div>
         <div>
-          <div class="tourney-prize">🏆 ${t.prize}</div>
-          <div class="tourney-entry">Prize Pool</div>
+          ${prizeDisplay}
           ${t.joined
             ? `<button class="join-btn" onclick="showLobbyBracket(${t.id})">${t.complete ? 'View' : 'Play'}</button>`
             : `<button class="join-btn" onclick="promptJoinTourney(${t.id})">Join</button>`}
@@ -618,8 +649,11 @@ function renderTourneyList() {
 
 function promptJoinTourney(id) {
   const t = state.tournaments[id];
+  const prizeText = t.special === 'emoji'
+    ? `Prize: <strong style="color:var(--epic)">A random emoji you don't yet own (any rarity)</strong>`
+    : `Prize pool: <strong style="color:var(--gold)">${t.prize} tokens</strong>`;
   openModal('Join ' + t.name + '?',
-    `Entry: <strong style="color:var(--gold)">${t.entry} token${t.entry>1?'s':''}</strong><br>Prize pool: <strong style="color:var(--gold)">${t.prize} tokens</strong><br>Format: 8-player single elimination, best of 3.`,
+    `Entry: <strong style="color:var(--gold)">${t.entry} token${t.entry>1?'s':''}</strong><br>${prizeText}<br>Format: 8-player single elimination, best of 3.`,
     () => joinTourney(id)
   );
 }
@@ -657,6 +691,7 @@ function buildBracket(t) {
     const m = r1[i];
     if (m.p1 === 'You' || m.p2 === 'You') continue;
     const w = Math.random() < 0.5 ? m.p1 : m.p2;
+    // AI matches: never a tie (someone reaches 2 wins)
     m.s1 = m.p1 === w ? 2 : Math.floor(Math.random() * 2);
     m.s2 = m.p2 === w ? 2 : Math.floor(Math.random() * 2);
     m.done = true; m.winner = w;
@@ -673,7 +708,7 @@ function showLobbyBracket(id) {
   document.getElementById('lobby-tourney').style.display = 'none';
   document.getElementById('lobby-bracket').style.display = 'flex';
   document.getElementById('bracket-tourney-name').textContent = t.name;
-  document.getElementById('bracket-prize').textContent = '🏆 ' + t.prize;
+  document.getElementById('bracket-prize').textContent = t.special === 'emoji' ? '🎁 Mystery Emoji' : ('🏆 ' + t.prize);
   renderBracket(t);
   showView('lobby');
   document.getElementById('lobby-bracket').style.display = 'flex';
@@ -740,11 +775,12 @@ function startTourneyMatch(tourneyId, roundIdx, matchIdx) {
   runtime.activeTourneyMatchIdx = { roundIdx, matchIdx };
   const opp = m.p1 === 'You' ? m.p2 : m.p1;
   const prizeForWinner = roundIdx === 2 ? t.prize : 0;
-  startGame('tourney', 0, prizeForWinner, opp, '🤖', 3);
+  // Random emoji avatar for tournament opponents
+  const oppEmoji = randomBotEmoji();
+  startGame('tourney', 0, prizeForWinner, opp, oppEmoji, 3);
 }
 
 function onTourneyMatchContinue(won) {
-  // Called when user taps continue on result popup for a tourney match
   const t = state.tournaments[runtime.activeTourney];
   const { roundIdx, matchIdx } = runtime.activeTourneyMatchIdx;
   const m = t.bracket.rounds[roundIdx][matchIdx];
@@ -789,10 +825,24 @@ function onTourneyMatchContinue(won) {
   }
   const fin = t.bracket.rounds[2][0];
   if (fin.done && fin.winner === 'You') {
-    state.balance += t.prize; state.earned += t.prize;
+    if (t.special === 'emoji') {
+      // Award a random emoji the player doesn't already own
+      const unowned = EMOJI_CATALOG.filter(em => !state.ownedEmojis.includes(em.e) && em.e !== ROCK_EMOJI);
+      if (unowned.length > 0) {
+        const reward = unowned[Math.floor(Math.random() * unowned.length)];
+        state.ownedEmojis.push(reward.e);
+        toast('🏆 Champion! Unlocked ' + reward.name + ' ' + reward.e);
+      } else {
+        // Edge case: player owns everything → give 25 tokens instead
+        state.balance += 25; state.earned += 25;
+        toast('🏆 Champion! All emojis owned — +25 tokens instead');
+      }
+    } else {
+      state.balance += t.prize; state.earned += t.prize;
+      toast('🏆 Champion! +' + t.prize + ' tokens');
+    }
     state.tourneysWon = (state.tourneysWon || 0) + 1;
     updateBalance();
-    toast('🏆 Champion! +' + t.prize + ' tokens');
     t.complete = true;
   }
   saveState();
@@ -845,7 +895,6 @@ function renderProfile() {
   document.getElementById('ps-streak').textContent = state.bestStreak;
   document.getElementById('ps-trophies').textContent = state.tourneysWon || 0;
   document.getElementById('ps-games').textContent = state.games;
-  // Reset button state
   const resetBtn = document.getElementById('reset-btn');
   if (state.hasReset) {
     resetBtn.disabled = true;
@@ -876,25 +925,43 @@ function saveName() {
   toast('Name saved');
 }
 
+/* RESET — now requires typing 'confirm', and preserves owned emojis + avatar */
 function confirmReset() {
   if (state.hasReset) { toast('Reset already used'); return; }
-  openModal('Reset all progress?',
-    'This will erase your stats, ELO, tokens, owned emojis, history, and tournaments. <strong style="color:var(--danger)">You can only reset ONCE</strong>. Cannot be undone.',
-    () => {
-      const fresh = { ...DEFAULT_STATE };
-      fresh.hasReset = true; // mark as used
-      state = fresh;
-      saveState();
-      updateBalance();
-      updateHeader();
-      renderProfile();
-      renderHistory();
-      initTourneys();
-      refreshFeatured();
-      toast('Progress reset');
-      showView('lobby');
-    }
-  );
+  const input = document.getElementById('reset-confirm-input');
+  const btn = document.getElementById('reset-confirm-btn');
+  input.value = '';
+  btn.disabled = true;
+  document.getElementById('reset-modal').classList.add('open');
+  setTimeout(() => input.focus(), 100);
+}
+function closeResetModal() {
+  document.getElementById('reset-modal').classList.remove('open');
+}
+function executeReset() {
+  const input = document.getElementById('reset-confirm-input');
+  if (input.value.trim().toLowerCase() !== 'confirm') {
+    toast('Type "confirm" exactly to proceed');
+    return;
+  }
+  // Preserve owned emojis and current avatar across reset
+  const keptEmojis = [...state.ownedEmojis];
+  const keptAvatar = state.avatar;
+  const fresh = { ...DEFAULT_STATE };
+  fresh.hasReset = true;
+  fresh.ownedEmojis = keptEmojis;
+  fresh.avatar = keptAvatar;
+  state = fresh;
+  saveState();
+  closeResetModal();
+  updateBalance();
+  updateHeader();
+  renderProfile();
+  renderHistory();
+  initTourneys();
+  refreshFeatured();
+  toast('Progress reset (emojis kept)');
+  showView('lobby');
 }
 
 /* ---- SHOP ---- */
@@ -923,7 +990,6 @@ function renderFeatured() {
 
 function renderChallenges() {
   const list = document.getElementById('challenges-list');
-  // Rock challenge
   const rockUnlocked = checkRockUnlocked();
   const rockOwned = state.ownedEmojis.includes(ROCK_EMOJI);
   const tProg = Math.min(state.tourneysWon || 0, 5);
@@ -999,17 +1065,27 @@ function shopItemHtml(item) {
 
 function renderShopBrowse() {
   const container = document.getElementById('shop-content');
-  // Filter by category, exclude rock from regular browse
   const filtered = (runtime.shopCat === 'all'
     ? EMOJI_CATALOG
     : EMOJI_CATALOG.filter(e => e.cat === runtime.shopCat)
   ).filter(e => e.e !== ROCK_EMOJI);
 
-  // Group by rarity
-  const rarityOrder = ['legendary', 'epic', 'rare', 'common'];
+  // ASCENDING rarity (cheapest/most-common first)
+  const rarityOrder = ['common', 'rare', 'epic', 'legendary'];
   const byRarity = {};
   for (const r of rarityOrder) byRarity[r] = [];
   for (const item of filtered) byRarity[item.rarity].push(item);
+
+  // Within each rarity bucket, sort owned emojis first
+  for (const r of rarityOrder) {
+    byRarity[r].sort((a, b) => {
+      const aOwned = state.ownedEmojis.includes(a.e);
+      const bOwned = state.ownedEmojis.includes(b.e);
+      if (aOwned && !bOwned) return -1;
+      if (!aOwned && bOwned) return 1;
+      return 0;
+    });
+  }
 
   const sections = rarityOrder
     .filter(r => byRarity[r].length > 0)
@@ -1062,6 +1138,12 @@ function openModal(title, body, cb) {
 }
 function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
 document.getElementById('modal-confirm-btn').onclick = () => { closeModal(); runtime.modalCb && runtime.modalCb(); };
+
+// Wire up reset confirmation input — enable button only when text matches
+document.getElementById('reset-confirm-input').addEventListener('input', (e) => {
+  const btn = document.getElementById('reset-confirm-btn');
+  btn.disabled = e.target.value.trim().toLowerCase() !== 'confirm';
+});
 
 function openBuy() { document.getElementById('buy-modal').classList.add('open'); }
 function buyTokens(amt, price) {

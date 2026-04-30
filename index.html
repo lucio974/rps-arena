@@ -34,6 +34,10 @@
   #app{display:flex;flex-direction:column;height:100vh;height:100dvh;
     padding-top:var(--safe-top);padding-bottom:var(--safe-bot)}
 
+  /* Hide chrome (header + nav) when in game */
+  #app.in-game .header,
+  #app.in-game .nav{display:none}
+
   .header{background:var(--surface);border-bottom:1px solid var(--border);
     padding:14px 18px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:10px}
   .logo-wrap{display:flex;align-items:center;gap:10px;cursor:pointer;flex:1;min-width:0}
@@ -81,16 +85,17 @@
   .badge{position:absolute;top:10px;right:10px;background:var(--gold);color:#000;
     font-size:9px;font-weight:700;letter-spacing:.08em;padding:3px 6px;border-radius:3px}
 
-  .match-options{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-  .match-opt{background:var(--surface);border:1.5px solid var(--border);border-radius:12px;
-    padding:14px 12px;text-align:center;cursor:pointer;transition:.15s;-webkit-user-select:none;position:relative}
-  .match-opt:active{transform:scale(.97)}
-  .match-opt.selected{border-color:var(--accent);background:rgba(79,142,247,.1)}
-  .match-opt-prize{font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--gold);font-weight:700}
-  .match-opt-entry{font-size:11px;color:var(--muted);margin-top:2px}
-  .match-opt-label{font-size:13px;font-weight:600;margin-bottom:6px}
-  .match-opt-elo{font-size:10px;font-weight:700;color:var(--success);margin-top:4px;letter-spacing:.05em}
-  .match-opt-elo .neg{color:var(--danger)}
+  /* Single PvP info card (replaces tier grid) */
+  .pvp-info{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;align-items:center;justify-content:space-between;gap:14px}
+  .pvp-info-left{display:flex;flex-direction:column;gap:4px}
+  .pvp-info-label{font-size:10px;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;font-weight:700}
+  .pvp-info-prize{font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--gold);line-height:1;font-weight:700}
+  .pvp-info-entry{font-size:12px;color:var(--muted)}
+  .pvp-info-right{text-align:right;font-size:11px}
+  .pvp-info-elo{font-weight:700;letter-spacing:.05em}
+  .pvp-info-elo .pos{color:var(--success)}
+  .pvp-info-elo .neg{color:var(--danger)}
+
   .find-btn{background:var(--accent);color:#fff;border:none;border-radius:12px;padding:15px;
     font-size:15px;font-weight:700;cursor:pointer;transition:.15s;width:100%;-webkit-user-select:none}
   .find-btn:active{transform:scale(.98);opacity:.85}
@@ -109,6 +114,8 @@
   .player-name-row{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700}
   .player-name-row .mini-avatar{width:24px;height:24px;border-radius:50%;background:var(--surface3);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
   .player-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;font-weight:700}
+  .player-elo{font-size:10px;color:var(--muted);letter-spacing:.06em;font-weight:600;margin-top:1px}
+  .player-elo .num{color:var(--gold)}
   .player-score{font-family:'Bebas Neue',sans-serif;font-size:30px;color:var(--gold);line-height:1;font-weight:700}
   .vs{font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--muted);font-weight:700}
   .stake-tag{background:var(--surface3);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--gold);font-weight:600;white-space:nowrap}
@@ -122,6 +129,11 @@
   .strikes{display:flex;gap:6px}
   .strike-dot{width:18px;height:18px;border-radius:50%;border:2px solid var(--border);transition:.3s}
   .strike-dot.filled{background:var(--danger);border-color:var(--danger)}
+
+  /* Game-view exit button (because nav is hidden) */
+  .game-exit-row{display:flex;justify-content:flex-end}
+  .game-exit-btn{background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer}
+  .game-exit-btn:active{background:var(--surface2)}
 
   .round-info{text-align:center;font-size:12px;color:var(--muted);font-weight:500}
   .choices-row{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center}
@@ -141,33 +153,32 @@
   .rps-btn:disabled{opacity:.35}
   .rps-label{font-size:10px;color:var(--muted);display:block;margin-top:4px;letter-spacing:.06em;text-transform:uppercase;font-weight:700}
 
-  /* RESULT POPUP - replaces inline banner */
+  /* RESULT POPUP — slimmer, no emoji */
   .result-popup-overlay{position:fixed;inset:0;background:rgba(0,0,0,.8);display:none;
     align-items:center;justify-content:center;z-index:150;padding:20px;
     backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);animation:fadein .25s ease}
   .result-popup-overlay.open{display:flex}
-  .result-popup{background:var(--surface);border:2px solid var(--border);border-radius:20px;
-    padding:30px 24px;width:100%;max-width:340px;text-align:center;animation:popin .3s cubic-bezier(.34,1.56,.64,1)}
-  .result-popup.win{border-color:var(--success);box-shadow:0 0 40px rgba(59,154,90,.3)}
-  .result-popup.lose{border-color:var(--danger);box-shadow:0 0 40px rgba(226,75,74,.25)}
-  .result-popup.draw{border-color:var(--accent);box-shadow:0 0 40px rgba(79,142,247,.25)}
-  @keyframes popin{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:scale(1)}}
+  .result-popup{background:var(--surface);border:2px solid var(--border);border-radius:14px;
+    padding:18px 18px;width:100%;max-width:300px;text-align:center;animation:popin .3s cubic-bezier(.34,1.56,.64,1)}
+  .result-popup.win{border-color:var(--success)}
+  .result-popup.lose{border-color:var(--danger)}
+  .result-popup.draw{border-color:var(--accent)}
+  @keyframes popin{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
   @keyframes fadein{from{opacity:0}to{opacity:1}}
-  .result-emoji{font-size:64px;margin-bottom:8px;line-height:1}
-  .result-title{font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:.05em;font-weight:700;margin-bottom:6px}
+  .result-title{font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:.05em;font-weight:700;margin-bottom:4px;line-height:1.1}
   .result-popup.win .result-title{color:var(--success)}
   .result-popup.lose .result-title{color:var(--danger)}
   .result-popup.draw .result-title{color:var(--accent)}
-  .result-detail{font-size:14px;color:var(--text);margin-top:8px;line-height:1.5}
-  .elo-change{font-family:'Bebas Neue',sans-serif;font-size:24px;margin-top:12px;font-weight:700}
+  .result-detail{font-size:13px;color:var(--text);margin-top:4px;line-height:1.4}
+  .elo-change{font-family:'Bebas Neue',sans-serif;font-size:18px;margin-top:8px;font-weight:700}
   .elo-change.up{color:var(--success)}
   .elo-change.down{color:var(--danger)}
-  .reward-pop{margin-top:14px;padding:14px;background:rgba(201,168,76,.12);border:1px solid var(--gold);border-radius:10px;font-size:13px}
-  .reward-pop .emoji-big{font-size:42px;display:block;margin-bottom:6px;line-height:1}
+  .reward-pop{margin-top:10px;padding:10px;background:rgba(201,168,76,.12);border:1px solid var(--gold);border-radius:8px;font-size:12px}
+  .reward-pop .emoji-big{font-size:34px;display:block;margin-bottom:4px;line-height:1}
   .reward-pop strong{color:var(--gold)}
-  .result-actions{display:flex;gap:10px;margin-top:18px;justify-content:center;flex-wrap:wrap}
+  .result-actions{display:flex;gap:8px;margin-top:12px;justify-content:center;flex-wrap:wrap}
   .result-actions button{background:var(--surface2);border:1px solid var(--border);
-    color:var(--text);border-radius:10px;padding:11px 22px;cursor:pointer;font-size:14px;font-weight:600;flex:1;min-width:120px}
+    color:var(--text);border-radius:8px;padding:9px 16px;cursor:pointer;font-size:13px;font-weight:600;flex:1;min-width:110px}
   .result-actions button.primary{background:var(--gold);border-color:var(--gold);color:#000}
   .result-actions button:active{transform:scale(.96)}
 
@@ -175,10 +186,12 @@
   .tourney-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;
     padding:14px;display:flex;align-items:center;justify-content:space-between;gap:12px}
   .tourney-card.active-tourney{border-color:var(--gold)}
+  .tourney-card.special{border-color:var(--epic);background:linear-gradient(135deg,rgba(169,107,255,.08),var(--surface))}
   .tourney-info{flex:1;min-width:0}
   .tourney-name{font-weight:700;font-size:14px;margin-bottom:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
   .tourney-meta{font-size:11px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap}
   .tourney-prize{font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--gold);text-align:right;white-space:nowrap;font-weight:700}
+  .tourney-prize.emoji-prize{font-size:28px;line-height:1}
   .tourney-entry{font-size:10px;color:var(--muted);text-align:right}
   .join-btn{background:var(--surface2);border:1px solid var(--gold);color:var(--gold);
     border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;
@@ -230,7 +243,8 @@
     border-radius:10px;padding:12px;cursor:pointer;font-size:14px;font-weight:500}
   .btn-confirm{flex:1;background:var(--gold);border:none;color:#000;
     border-radius:10px;padding:12px;cursor:pointer;font-size:14px;font-weight:700}
-  .btn-cancel:active,.btn-confirm:active{transform:scale(.97)}
+  .btn-confirm:disabled{opacity:.4;cursor:not-allowed}
+  .btn-cancel:active,.btn-confirm:active:not(:disabled){transform:scale(.97)}
 
   .empty-state{text-align:center;padding:40px 0;color:var(--muted);font-size:14px}
 
@@ -369,13 +383,13 @@
           <div class="mode-icon">⚔️</div>
           <div class="mode-name">PvP</div>
           <div class="mode-desc">Ranked match. Affects your ELO.</div>
-          <div class="mode-entry">1 token entry</div>
+          <div class="mode-entry">2 token entry</div>
         </div>
         <div class="mode-card" onclick="showLobbySection('tourney')">
           <div class="mode-icon">🏆</div>
           <div class="mode-name">Tournaments</div>
           <div class="mode-desc">8-player bracket. Best of 3.</div>
-          <div class="mode-entry">1–5 tokens</div>
+          <div class="mode-entry">1–10 tokens</div>
         </div>
         <div class="mode-card" onclick="startStreakRun()">
           <div class="mode-icon">🔥</div>
@@ -396,7 +410,17 @@
           <button onclick="hideLobbySections()">← Back</button>
           <div style="font-weight:700">Find PvP Match</div>
         </div>
-        <div class="match-options" id="match-options-grid"></div>
+        <div class="pvp-info">
+          <div class="pvp-info-left">
+            <div class="pvp-info-label">Prize</div>
+            <div class="pvp-info-prize" id="pvp-prize-display">▣ 4</div>
+            <div class="pvp-info-entry" id="pvp-entry-display">Entry: 2 tokens</div>
+          </div>
+          <div class="pvp-info-right">
+            <div class="pvp-info-label" style="margin-bottom:4px">ELO Change</div>
+            <div class="pvp-info-elo"><span class="pos" id="pvp-elo-up">+0</span> / <span class="neg" id="pvp-elo-down">-0</span></div>
+          </div>
+        </div>
         <div id="pvp-error" style="font-size:12px;color:var(--danger);margin-bottom:4px;display:none"></div>
         <button class="find-btn" onclick="startFindMatch()">Find Match</button>
       </div>
@@ -433,6 +457,9 @@
 
     <!-- GAME -->
     <div class="view" id="view-game">
+      <div class="game-exit-row">
+        <button class="game-exit-btn" onclick="leaveGame()">← Forfeit</button>
+      </div>
       <div class="streak-hud" id="streak-hud" style="display:none">
         <div class="streak-info">
           <div class="streak-label">Streak</div>
@@ -456,8 +483,9 @@
             <div class="mini-avatar" id="you-avatar">😀</div>
             <span class="player-name" id="you-name">You</span>
           </div>
+          <div class="player-elo" id="you-elo" style="display:none">ELO <span class="num">1000</span></div>
           <div class="player-score" id="score-you">0</div>
-          <div class="stake-tag" id="stake-label">1 token entry</div>
+          <div class="stake-tag" id="stake-label">2 token entry</div>
         </div>
         <div class="vs">VS</div>
         <div class="player-info right">
@@ -465,6 +493,7 @@
             <span class="player-name" id="opp-name">Opponent</span>
             <div class="mini-avatar" id="opp-avatar">🤖</div>
           </div>
+          <div class="player-elo" id="opp-elo" style="display:none">ELO <span class="num">1000</span></div>
           <div class="player-score" id="score-opp">0</div>
           <div style="font-size:11px;color:var(--muted)" id="round-label">Best of 3</div>
         </div>
@@ -548,10 +577,9 @@
   </div>
 </div>
 
-<!-- RESULT POPUP -->
+<!-- RESULT POPUP (no emoji) -->
 <div class="result-popup-overlay" id="result-popup-overlay">
   <div class="result-popup" id="result-popup">
-    <div class="result-emoji" id="result-emoji">🏆</div>
     <div class="result-title" id="result-title"></div>
     <div class="result-detail" id="result-detail"></div>
     <div class="elo-change" id="elo-change-display"></div>
@@ -569,6 +597,24 @@
     <div class="modal-btns">
       <button class="btn-cancel" onclick="closeModal()">Cancel</button>
       <button class="btn-confirm" id="modal-confirm-btn">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- RESET MODAL (separate, requires typing 'confirm') -->
+<div class="modal-overlay" id="reset-modal">
+  <div class="modal">
+    <h3>Reset all progress?</h3>
+    <div style="font-size:13px;color:var(--muted);line-height:1.6">
+      This will erase your stats, ELO, tokens, history, and tournaments.
+      <strong style="color:var(--text)">Your owned emojis will be kept.</strong><br><br>
+      <strong style="color:var(--danger)">You can only reset ONCE.</strong> Cannot be undone.<br><br>
+      Type <strong style="color:var(--danger)">confirm</strong> below to proceed.
+    </div>
+    <input type="text" class="name-input" id="reset-confirm-input" placeholder="Type 'confirm'" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" style="margin-top:14px">
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeResetModal()">Cancel</button>
+      <button class="btn-confirm" id="reset-confirm-btn" disabled onclick="executeReset()">Reset</button>
     </div>
   </div>
 </div>
