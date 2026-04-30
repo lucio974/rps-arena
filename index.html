@@ -49,9 +49,6 @@
     font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;transition:.2s}
   .nav-btn.active{color:var(--gold);border-bottom-color:var(--gold)}
 
-  /* Hide nav + header during a match */
-  body.in-match .nav, body.in-match .header { display:none }
-
   .view-wrap{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
   .view{display:none;padding:18px;flex-direction:column;gap:16px;min-height:100%}
   .view.active{display:flex}
@@ -82,11 +79,17 @@
   .badge{position:absolute;top:10px;right:10px;background:var(--gold);color:#000;
     font-size:9px;font-weight:700;letter-spacing:.08em;padding:3px 6px;border-radius:3px}
 
-  /* PvP single match card */
-  .pvp-card{background:var(--surface);border:1.5px solid var(--gold);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:14px}
-  .pvp-card-row{display:flex;justify-content:space-between;font-size:13px}
-  .pvp-card-row .label{color:var(--muted)}
-  .pvp-card-row .val{color:var(--gold);font-weight:600}
+  .match-options{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .match-opt{background:var(--surface);border:1.5px solid var(--border);border-radius:12px;
+    padding:14px 12px;text-align:center;cursor:pointer;transition:.15s;-webkit-user-select:none}
+  .match-opt:active{transform:scale(.97)}
+  .match-opt.selected{border-color:var(--accent);background:rgba(79,142,247,.1)}
+  .match-opt-prize{font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--gold)}
+  .match-opt-entry{font-size:11px;color:var(--muted);margin-top:2px}
+  .match-opt-elo{font-size:10px;color:var(--success);margin-top:4px;font-weight:600;letter-spacing:.03em}
+  .match-opt-elo .neg{color:var(--danger)}
+  .match-opt-label{font-size:13px;font-weight:600;margin-bottom:6px}
+
   .find-btn{background:var(--accent);color:#fff;border:none;border-radius:12px;padding:15px;
     font-size:15px;font-weight:600;cursor:pointer;transition:.15s;width:100%;-webkit-user-select:none}
   .find-btn:active{transform:scale(.98);opacity:.85}
@@ -105,10 +108,28 @@
   .player-name-row{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600}
   .player-name-row .mini-avatar{width:24px;height:24px;border-radius:50%;background:var(--surface3);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
   .player-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}
-  .player-elo{font-size:10px;color:var(--gold);font-weight:600;letter-spacing:.05em;margin-top:2px}
   .player-score{font-family:'Bebas Neue',sans-serif;font-size:30px;color:var(--gold);line-height:1}
   .vs{font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--muted)}
+  .player-elo{font-size:10px;color:var(--gold);font-weight:700;letter-spacing:.05em;margin-top:2px;font-family:'Bebas Neue',sans-serif}
   .stake-tag{background:var(--surface3);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--gold);font-weight:600;white-space:nowrap}
+
+  /* Single PvP match card */
+  .pvp-card{background:var(--surface);border:1.5px solid var(--gold);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:14px}
+  .pvp-card-row{display:flex;justify-content:space-between;font-size:13px;align-items:center}
+  .pvp-card-row .label{color:var(--muted)}
+  .pvp-card-row .val{color:var(--gold);font-weight:600}
+
+  /* Tourney card variants */
+  .tourney-card.special{border-color:var(--epic);background:linear-gradient(135deg,var(--surface),rgba(169,107,255,.08))}
+  .tourney-prize.special{color:var(--epic);font-size:16px}
+  .join-btn.special{border-color:var(--epic);color:var(--epic)}
+  .join-btn.special:active{background:var(--epic);color:#fff}
+
+  .confirm-input{width:100%;background:var(--surface2);border:1px solid var(--border);
+    color:var(--text);border-radius:10px;padding:12px;font-size:15px;font-family:inherit;text-align:center}
+  .confirm-input:focus{outline:none;border-color:var(--gold)}
+  .btn-confirm.danger{background:var(--danger);color:#fff}
+  .btn-confirm:disabled{opacity:.4;cursor:not-allowed}
 
   .streak-hud{background:linear-gradient(135deg,rgba(201,168,76,.15),rgba(79,142,247,.08));
     border:1px solid var(--gold);border-radius:14px;padding:12px 16px;
@@ -138,23 +159,34 @@
   .rps-btn:disabled{opacity:.35}
   .rps-label{font-size:10px;color:var(--muted);display:block;margin-top:4px;letter-spacing:.06em;text-transform:uppercase;font-weight:600}
 
-  /* Compact result popup */
-  .result-modal{background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:18px;width:100%;max-width:300px;text-align:center}
-  .result-modal.win{border-color:var(--success)}
-  .result-modal.lose{border-color:var(--danger)}
-  .result-modal.draw{border-color:var(--accent)}
-  .result-modal h3{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.05em;margin-bottom:6px}
-  .result-modal h3.win{color:var(--success)}
-  .result-modal h3.lose{color:var(--danger)}
-  .result-modal h3.draw{color:var(--accent)}
+  /* Hide nav + header during a match */
+  body.in-match .nav, body.in-match .header { display:none }
+  body.in-match .view-wrap { padding-top: var(--safe-top); }
+
+  /* Result popup overlay */
+  .result-popup-overlay{position:fixed;inset:0;background:rgba(0,0,0,.78);display:none;
+    align-items:center;justify-content:center;z-index:120;padding:20px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+  .result-popup-overlay.open{display:flex;animation:fadein .2s ease}
+  @keyframes fadein{from{opacity:0}to{opacity:1}}
+  .result-popup{background:var(--surface);border:1.5px solid var(--border);border-radius:14px;
+    padding:18px 20px;width:100%;max-width:300px;text-align:center}
+  .result-popup.win{border-color:var(--success)}
+  .result-popup.lose{border-color:var(--danger)}
+  .result-popup.draw{border-color:var(--accent)}
+  .result-popup .result-emoji{display:none}
+  .result-popup h3{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.05em;margin-bottom:6px}
+  .result-popup.win h3{color:var(--success)}
+  .result-popup.lose h3{color:var(--danger)}
+  .result-popup.draw h3{color:var(--accent)}
   .result-detail{font-size:13px;color:var(--text);margin-top:2px;line-height:1.5}
-  .result-detail .muted{color:var(--muted)}
-  .elo-change{font-family:'Bebas Neue',sans-serif;font-size:18px;margin-top:6px}
+  .elo-change{font-family:'Bebas Neue',sans-serif;font-size:20px;margin-top:8px}
   .elo-change.up{color:var(--success)}
   .elo-change.down{color:var(--danger)}
-  .result-actions{display:flex;gap:8px;margin-top:14px;justify-content:center;flex-wrap:wrap}
+  .reward-pop{margin-top:12px;padding:12px 14px;background:rgba(201,168,76,.12);border:1px solid var(--gold);border-radius:10px;font-size:13px}
+  .reward-pop .emoji-big{font-size:36px;display:block;margin-bottom:4px}
+  .result-actions{display:flex;gap:8px;margin-top:16px;justify-content:center;flex-wrap:wrap}
   .result-actions button{background:var(--surface2);border:1px solid var(--border);
-    color:var(--text);border-radius:9px;padding:10px 18px;cursor:pointer;font-size:13px;font-weight:600;flex:1;min-width:100px}
+    color:var(--text);border-radius:10px;padding:11px 18px;cursor:pointer;font-size:13px;font-weight:600;flex:1;min-width:100px}
   .result-actions button.primary{background:var(--gold);border-color:var(--gold);color:#000}
   .result-actions button:active{transform:scale(.96)}
 
@@ -162,19 +194,15 @@
   .tourney-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;
     padding:14px;display:flex;align-items:center;justify-content:space-between;gap:12px}
   .tourney-card.active-tourney{border-color:var(--gold)}
-  .tourney-card.special{border-color:var(--epic);background:linear-gradient(135deg,var(--surface),rgba(169,107,255,.08))}
   .tourney-info{flex:1;min-width:0}
   .tourney-name{font-weight:600;font-size:14px;margin-bottom:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
   .tourney-meta{font-size:11px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap}
   .tourney-prize{font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--gold);text-align:right;white-space:nowrap}
-  .tourney-prize.special{color:var(--epic);font-size:18px}
   .tourney-entry{font-size:10px;color:var(--muted);text-align:right}
   .join-btn{background:var(--surface2);border:1px solid var(--gold);color:var(--gold);
     border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;
     transition:.15s;white-space:nowrap;margin-top:8px;-webkit-user-select:none}
   .join-btn:active{background:var(--gold);color:#000}
-  .join-btn.special{border-color:var(--epic);color:var(--epic)}
-  .join-btn.special:active{background:var(--epic);color:#fff}
 
   .bracket-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:6px}
   .bracket{display:flex;gap:0;align-items:stretch;min-width:max-content}
@@ -199,13 +227,12 @@
   .hist-result.W{background:rgba(59,154,90,.2);color:var(--success)}
   .hist-result.L{background:rgba(226,75,74,.15);color:var(--danger)}
   .hist-result.D{background:rgba(79,142,247,.1);color:var(--accent)}
-  .hist-elo{font-weight:600;white-space:nowrap;font-size:13px}
+  .hist-elo{font-weight:700;white-space:nowrap;font-size:13px;font-family:'Bebas Neue',sans-serif;letter-spacing:.04em}
   .hist-elo.pos{color:var(--success)}
   .hist-elo.neg{color:var(--danger)}
   .hist-elo.zero{color:var(--muted)}
-  .hist-opp-row{flex:1;min-width:0;font-size:12px;display:flex;flex-direction:column;gap:2px}
-  .hist-opp{display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .hist-opp .av{font-size:14px}
+  .hist-opp-row{display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hist-opp-avatar{font-size:14px}
 
   .buy-btn{background:var(--surface2);border:1px solid var(--gold);color:var(--gold);
     border-radius:8px;padding:6px 10px;font-size:14px;font-weight:700;cursor:pointer;-webkit-user-select:none;line-height:1}
@@ -214,7 +241,6 @@
   .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);display:none;
     align-items:center;justify-content:center;z-index:100;padding:20px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
   .modal-overlay.open{display:flex;animation:fadein .2s ease}
-  @keyframes fadein{from{opacity:0}to{opacity:1}}
   .modal{background:var(--surface);border:1px solid var(--border);border-radius:18px;
     padding:24px;width:100%;max-width:340px;max-height:80vh;overflow-y:auto}
   .modal h3{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.05em;margin-bottom:12px}
@@ -223,9 +249,7 @@
     border-radius:10px;padding:12px;cursor:pointer;font-size:14px;font-weight:500}
   .btn-confirm{flex:1;background:var(--gold);border:none;color:#000;
     border-radius:10px;padding:12px;cursor:pointer;font-size:14px;font-weight:700}
-  .btn-confirm.danger{background:var(--danger);color:#fff}
-  .btn-confirm:disabled{opacity:.4;cursor:not-allowed}
-  .btn-cancel:active,.btn-confirm:active:not(:disabled){transform:scale(.97)}
+  .btn-cancel:active,.btn-confirm:active{transform:scale(.97)}
 
   .empty-state{text-align:center;padding:40px 0;color:var(--muted);font-size:14px}
 
@@ -243,6 +267,7 @@
   .toast.show{display:block}
   @keyframes slideup{from{opacity:0;transform:translate(-50%,20px)}to{opacity:1;transform:translate(-50%,0)}}
 
+  /* PROFILE */
   .profile-hero{background:var(--surface);border:1px solid var(--border);border-radius:16px;
     padding:24px 20px;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center}
   .big-avatar{width:110px;height:110px;border-radius:50%;background:var(--surface2);
@@ -258,11 +283,15 @@
   .pstat-label{font-size:10px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;font-weight:600}
   .pstat-val{font-family:'Bebas Neue',sans-serif;font-size:24px;color:var(--gold);margin-top:2px}
 
+  /* SHOP */
   .shop-tabs{display:flex;gap:6px;margin-bottom:4px;overflow-x:auto;-webkit-overflow-scrolling:touch}
   .shop-tabs::-webkit-scrollbar{display:none}
   .shop-tab{flex:1 0 auto;background:var(--surface);border:1px solid var(--border);color:var(--muted);
     border-radius:8px;padding:8px 14px;font-size:12px;font-weight:500;cursor:pointer;transition:.15s;white-space:nowrap}
   .shop-tab.active{border-color:var(--gold);color:var(--gold);background:rgba(201,168,76,.08)}
+
+  .shop-section-title{font-size:11px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;font-weight:700;margin:14px 0 8px;display:flex;align-items:center;gap:8px}
+  .shop-section-title.featured{color:var(--gold)}
 
   .shop-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
   .shop-item{background:var(--surface);border:1.5px solid var(--border);border-radius:12px;
@@ -275,17 +304,34 @@
   .shop-action.buy{color:var(--gold)}
   .shop-action.owned{color:var(--success)}
   .shop-action.equipped{color:var(--gold)}
-  .shop-action.free{color:var(--success)}
-  .rarity-tag{position:absolute;top:4px;right:4px;font-size:8px;font-weight:700;
-    padding:1px 4px;border-radius:3px;letter-spacing:.05em;text-transform:uppercase}
-  .rarity-tag.common{background:rgba(136,136,136,.25);color:#aaa}
-  .rarity-tag.rare{background:rgba(79,142,247,.25);color:var(--rare)}
-  .rarity-tag.epic{background:rgba(169,107,255,.25);color:var(--epic)}
-  .rarity-tag.legendary{background:rgba(201,168,76,.25);color:var(--gold)}
+  .shop-action.locked{color:var(--danger)}
 
-  .name-input,.confirm-input{width:100%;background:var(--surface2);border:1px solid var(--border);
+  .shop-rarity-section{margin-bottom:14px}
+  .shop-rarity-header{font-size:11px;letter-spacing:.12em;font-weight:700;text-transform:uppercase;margin:14px 0 8px}
+  .shop-rarity-header .count{color:var(--muted);font-weight:500;letter-spacing:.05em}
+  .shop-rarity-header.legendary{color:var(--gold)}
+  .shop-rarity-header.epic{color:var(--epic)}
+  .shop-rarity-header.rare{color:var(--rare)}
+  .shop-rarity-header.common{color:var(--muted)}
+
+  /* CHALLENGES */
+  .challenge-card{background:var(--surface);border:1.5px solid var(--border);border-radius:14px;
+    padding:14px;display:flex;gap:14px;align-items:center}
+  .challenge-card.complete{border-color:var(--gold);background:linear-gradient(135deg,var(--surface),rgba(201,168,76,.06))}
+  .challenge-emoji{font-size:42px;flex-shrink:0;background:var(--surface2);border-radius:12px;
+    width:64px;height:64px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border)}
+  .challenge-info{flex:1;min-width:0}
+  .challenge-name{font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:.05em;margin-bottom:2px}
+  .challenge-desc{font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.4}
+  .challenge-progress{height:5px;background:var(--surface3);border-radius:3px;overflow:hidden}
+  .challenge-progress-fill{height:100%;background:var(--accent);border-radius:3px;transition:.4s}
+  .challenge-progress-fill.done{background:var(--success)}
+  .challenge-progress-text{font-size:10px;color:var(--muted);margin-top:3px;font-weight:600;letter-spacing:.04em}
+  .challenge-progress-text.done{color:var(--success)}
+
+  .name-input{width:100%;background:var(--surface2);border:1px solid var(--border);
     color:var(--text);border-radius:10px;padding:12px;font-size:15px;font-family:inherit}
-  .name-input:focus,.confirm-input:focus{outline:none;border-color:var(--gold)}
+  .name-input:focus{outline:none;border-color:var(--gold)}
 
   .tourney-inline{display:flex;flex-direction:column;gap:10px}
   .back-bar{display:flex;align-items:center;gap:10px;margin-bottom:6px}
@@ -296,12 +342,12 @@
 <div id="app">
   <div class="header">
     <div class="logo-wrap" onclick="showView('profile');renderProfile()">
-      <div class="header-avatar" id="header-avatar">🪨</div>
+      <div class="header-avatar" id="header-avatar">😀</div>
       <div class="logo" id="header-name">RPS ARENA</div>
     </div>
     <div class="wallet">
-      <span style="font-size:15px">🪙</span>
-      <span class="wallet-amt" id="balance-display">1000</span>
+      <span style="font-size:15px">▣</span>
+      <span class="wallet-amt" id="balance-display">10</span>
       <button class="buy-btn" onclick="openBuy()">+</button>
     </div>
   </div>
@@ -321,7 +367,7 @@
         Tap the <strong>Share</strong> icon below, then <strong>Add to Home Screen</strong>.
       </div>
 
-      <div class="elo-hero" id="elo-hero">
+      <div class="elo-hero">
         <div class="elo-rank-tier" id="elo-tier-name">UNRANKED</div>
         <div class="elo-rank" id="elo-rating">1000</div>
         <div class="elo-label">ELO Rating</div>
@@ -341,13 +387,13 @@
           <div class="mode-icon">⚔️</div>
           <div class="mode-name">PvP</div>
           <div class="mode-desc">Ranked match. Affects your ELO.</div>
-          <div class="mode-entry">50 coin entry</div>
+          <div class="mode-entry">1–5 token entries</div>
         </div>
         <div class="mode-card" onclick="showLobbySection('tourney')">
           <div class="mode-icon">🏆</div>
           <div class="mode-name">Tournaments</div>
           <div class="mode-desc">8-player bracket. Best of 3.</div>
-          <div class="mode-entry">10–500 coins</div>
+          <div class="mode-entry">1–5 tokens</div>
         </div>
         <div class="mode-card" onclick="startStreakRun()">
           <div class="mode-icon">🔥</div>
@@ -363,6 +409,7 @@
         </div>
       </div>
 
+      <!-- PvP inline -->
       <div class="tourney-inline" id="lobby-pvp" style="display:none">
         <div class="back-bar">
           <button onclick="hideLobbySections()">← Back</button>
@@ -370,10 +417,10 @@
         </div>
         <div class="pvp-card">
           <div style="text-align:center">
-            <div style="font-family:'Bebas Neue';font-size:32px;color:var(--gold);line-height:1">🪙 50</div>
-            <div style="font-size:11px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-top:2px">Coin Entry</div>
+            <div style="font-family:'Bebas Neue';font-size:32px;color:var(--gold);line-height:1">▣ 2</div>
+            <div style="font-size:11px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-top:2px">Token Entry</div>
           </div>
-          <div class="pvp-card-row"><span class="label">Prize on win</span><span class="val">🪙 90 coins</span></div>
+          <div class="pvp-card-row"><span class="label">Prize on win</span><span class="val">▣ 4 tokens</span></div>
           <div class="pvp-card-row"><span class="label">ELO on win</span><span class="val" style="color:var(--success)">+75 to +135</span></div>
           <div class="pvp-card-row"><span class="label">ELO on loss</span><span class="val" style="color:var(--danger)">-75 to -135</span></div>
           <div class="pvp-card-row"><span class="label">Format</span><span class="val">Best of 3</span></div>
@@ -385,10 +432,11 @@
       <div class="searching-ui" id="pvp-searching">
         <div class="pulse"></div>
         <div style="font-weight:600;margin-bottom:4px;font-size:15px">Finding opponent…</div>
-        <div style="font-size:12px;color:var(--muted)">Entry: 50 coins held</div>
+        <div style="font-size:12px;color:var(--muted)">Entry: <span id="search-entry-display"></span> held</div>
         <button onclick="cancelSearch()" style="margin-top:18px;background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:9px 18px;cursor:pointer;font-size:13px">Cancel</button>
       </div>
 
+      <!-- Tournament list inline -->
       <div class="tourney-inline" id="lobby-tourney" style="display:none">
         <div class="back-bar">
           <button onclick="hideLobbySections()">← Back</button>
@@ -397,6 +445,7 @@
         <div class="tourney-list" id="tourney-list"></div>
       </div>
 
+      <!-- Bracket inline -->
       <div class="tourney-inline" id="lobby-bracket" style="display:none">
         <div class="back-bar">
           <button onclick="showLobbySection('tourney')">← Back</button>
@@ -434,12 +483,12 @@
       <div class="game-header">
         <div class="player-info">
           <div class="player-name-row">
-            <div class="mini-avatar" id="you-avatar">🪨</div>
+            <div class="mini-avatar" id="you-avatar">😀</div>
             <span class="player-name" id="you-name">You</span>
           </div>
           <div class="player-elo" id="you-elo" style="display:none">1000 ELO</div>
           <div class="player-score" id="score-you">0</div>
-          <div class="stake-tag" id="stake-label">50 coin entry</div>
+          <div class="stake-tag" id="stake-label">2 token entry</div>
         </div>
         <div class="vs">VS</div>
         <div class="player-info right">
@@ -468,21 +517,32 @@
     <!-- SHOP -->
     <div class="view" id="view-shop">
       <div class="section-title">Avatar Shop</div>
+
+      <div class="shop-section-title featured">⭐ Daily Featured</div>
+      <div class="shop-grid" id="shop-featured-grid"></div>
+
+      <div class="shop-section-title">🎯 Challenges</div>
+      <div id="challenges-list" style="display:flex;flex-direction:column;gap:10px"></div>
+
+      <div class="shop-section-title">Browse</div>
       <div class="shop-tabs" id="shop-tabs">
         <button class="shop-tab active" data-cat="all" onclick="setShopTab(this,'all')">All</button>
         <button class="shop-tab" data-cat="faces" onclick="setShopTab(this,'faces')">Faces</button>
+        <button class="shop-tab" data-cat="people" onclick="setShopTab(this,'people')">People</button>
         <button class="shop-tab" data-cat="animals" onclick="setShopTab(this,'animals')">Animals</button>
+        <button class="shop-tab" data-cat="food" onclick="setShopTab(this,'food')">Food</button>
+        <button class="shop-tab" data-cat="activities" onclick="setShopTab(this,'activities')">Activities</button>
+        <button class="shop-tab" data-cat="travel" onclick="setShopTab(this,'travel')">Travel</button>
         <button class="shop-tab" data-cat="objects" onclick="setShopTab(this,'objects')">Objects</button>
-        <button class="shop-tab" data-cat="legendary" onclick="setShopTab(this,'legendary')">Legendary</button>
       </div>
-      <div class="shop-grid" id="shop-grid"></div>
+      <div id="shop-content"></div>
     </div>
 
     <!-- PROFILE -->
     <div class="view" id="view-profile">
       <div class="profile-hero">
         <div class="big-avatar" onclick="showView('shop');renderShop()">
-          <span id="profile-avatar">🪨</span>
+          <span id="profile-avatar">😀</span>
           <div class="edit-pencil">✎</div>
         </div>
         <div>
@@ -497,13 +557,12 @@
       <div class="profile-stats">
         <div class="pstat"><div class="pstat-label">Total Wins</div><div class="pstat-val" id="ps-wins">0</div></div>
         <div class="pstat"><div class="pstat-label">Win Rate</div><div class="pstat-val" id="ps-winrate">—</div></div>
-        <div class="pstat"><div class="pstat-label">Coins Earned</div><div class="pstat-val" id="ps-earned">0</div></div>
+        <div class="pstat"><div class="pstat-label">Tokens Earned</div><div class="pstat-val" id="ps-earned">0</div></div>
         <div class="pstat"><div class="pstat-label">Best Streak</div><div class="pstat-val" id="ps-streak">0</div></div>
         <div class="pstat"><div class="pstat-label">Tourneys Won</div><div class="pstat-val" id="ps-trophies">0</div></div>
         <div class="pstat"><div class="pstat-label">Total Games</div><div class="pstat-val" id="ps-games">0</div></div>
       </div>
-      <button id="reset-btn" onclick="confirmReset()" style="margin-top:8px;background:none;border:1px solid var(--danger);color:var(--danger);border-radius:10px;padding:11px;cursor:pointer;font-size:13px;font-weight:600">Fresh Start</button>
-      <div id="reset-used-note" style="display:none;margin-top:6px;font-size:11px;color:var(--muted);text-align:center">You've already used your one-time fresh start.</div>
+      <button id="reset-btn" onclick="confirmReset()" style="margin-top:8px;background:none;border:1px solid var(--danger);color:var(--danger);border-radius:10px;padding:11px;cursor:pointer;font-size:13px;font-weight:600">Reset all progress (one-time)</button>
     </div>
 
     <!-- HISTORY -->
@@ -517,15 +576,18 @@
 </div>
 
 <!-- RESULT POPUP -->
-<div class="modal-overlay" id="result-overlay">
-  <div class="result-modal" id="result-modal">
+<div class="result-popup-overlay" id="result-popup-overlay">
+  <div class="result-popup" id="result-popup">
+    <div class="result-emoji" id="result-emoji">🏆</div>
     <h3 id="result-title"></h3>
     <div class="result-detail" id="result-detail"></div>
     <div class="elo-change" id="elo-change-display"></div>
+    <div id="reward-pop-area"></div>
     <div class="result-actions" id="result-actions"></div>
   </div>
 </div>
 
+<!-- GENERIC MODAL -->
 <div class="modal-overlay" id="modal-overlay">
   <div class="modal">
     <h3 id="modal-title">Confirm</h3>
@@ -537,36 +599,22 @@
   </div>
 </div>
 
-<div class="modal-overlay" id="reset-modal">
-  <div class="modal">
-    <h3>Fresh Start</h3>
-    <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px">
-      This wipes ELO, stats, history, and tournaments. <strong style="color:var(--text)">Your owned emojis and coins stay.</strong> You can only use this <strong style="color:var(--danger)">once</strong>.<br><br>
-      Type <strong style="color:var(--gold)">confirm</strong> below to proceed.
-    </div>
-    <input type="text" class="confirm-input" id="confirm-input" placeholder="confirm" autocomplete="off" oninput="updateResetBtn()">
-    <div class="modal-btns">
-      <button class="btn-cancel" onclick="document.getElementById('reset-modal').classList.remove('open');document.getElementById('confirm-input').value=''">Cancel</button>
-      <button class="btn-confirm danger" id="reset-confirm-btn" disabled onclick="doReset()">Reset</button>
-    </div>
-  </div>
-</div>
-
+<!-- BUY MODAL -->
 <div class="modal-overlay" id="buy-modal">
   <div class="modal">
-    <h3>Buy Coins</h3>
+    <h3>Buy Tokens</h3>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0">
-      <button onclick="buyCoin(500,4.99)" class="buy-pack">
-        <div class="bp-amt">🪙 500</div><div class="bp-price">$4.99</div>
+      <button onclick="buyTokens(50,4.99)" class="buy-pack">
+        <div class="bp-amt">▣ 50</div><div class="bp-price">$4.99</div>
       </button>
-      <button onclick="buyCoin(1200,9.99)" class="buy-pack">
-        <div class="bp-amt">🪙 1200</div><div class="bp-price">$9.99</div>
+      <button onclick="buyTokens(120,9.99)" class="buy-pack">
+        <div class="bp-amt">▣ 120</div><div class="bp-price">$9.99</div>
       </button>
-      <button onclick="buyCoin(3000,19.99)" class="buy-pack">
-        <div class="bp-amt">🪙 3000</div><div class="bp-price">$19.99</div>
+      <button onclick="buyTokens(300,19.99)" class="buy-pack">
+        <div class="bp-amt">▣ 300</div><div class="bp-price">$19.99</div>
       </button>
-      <button onclick="buyCoin(8000,49.99)" class="buy-pack">
-        <div class="bp-amt">🪙 8000</div><div class="bp-price">$49.99 <span class="bp-best">BEST</span></div>
+      <button onclick="buyTokens(800,49.99)" class="buy-pack">
+        <div class="bp-amt">▣ 800</div><div class="bp-price">$49.99 <span class="bp-best">BEST</span></div>
       </button>
     </div>
     <div style="font-size:10px;color:var(--muted);text-align:center;margin-bottom:10px">Demo only — no real charge.</div>
@@ -586,6 +634,21 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="reset-modal">
+  <div class="modal">
+    <h3>Reset Progress</h3>
+    <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px">
+      This wipes ELO, stats, history, and tournaments. <strong style="color:var(--text)">Your owned emojis and tokens stay.</strong> You can only do this <strong style="color:var(--danger)">once</strong>.<br><br>
+      Type <strong style="color:var(--gold)">confirm</strong> below to proceed.
+    </div>
+    <input type="text" class="confirm-input" id="confirm-input" placeholder="confirm" autocomplete="off" oninput="updateResetBtn()">
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="document.getElementById('reset-modal').classList.remove('open');document.getElementById('confirm-input').value=''">Cancel</button>
+      <button class="btn-confirm danger" id="reset-confirm-btn" disabled onclick="doReset()">Reset</button>
+    </div>
+  </div>
+</div>
+
 <style>
 .buy-pack{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px 8px;cursor:pointer;text-align:center;transition:.15s;color:var(--text)}
 .buy-pack:active{transform:scale(.97);border-color:var(--gold)}
@@ -596,6 +659,7 @@
 
 <div class="toast" id="toast"></div>
 
+<script src="emoji-catalog.js"></script>
 <script src="app.js"></script>
 <script>
 if('serviceWorker' in navigator){
