@@ -56,8 +56,6 @@ const DEFAULT_STATE = {
 let state = loadState();
 let runtime = {
   searchTimer: null,
-  currentTier: MATCH_TIERS[0],
-  selectedEntryEl: null,
   gameState: null,
   currentMode: 'pvp',
   activeTourney: null,
