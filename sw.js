@@ -1,8 +1,9 @@
-const CACHE = 'rps-arena-v3';
+const CACHE = 'rps-arena-v4';
 const ASSETS = [
   './',
   './index.html',
   './app.js',
+  './emoji-catalog.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
