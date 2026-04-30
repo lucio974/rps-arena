@@ -1,4 +1,4 @@
-const CACHE = 'rps-arena-v1';
+const CACHE = 'rps-arena-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -27,7 +27,6 @@ self.addEventListener('fetch', (e) => {
     caches.match(e.request).then(cached => {
       if (cached) return cached;
       return fetch(e.request).then(res => {
-        // Cache same-origin successful responses
         if (res.ok && e.request.url.startsWith(self.location.origin)) {
           const copy = res.clone();
           caches.open(CACHE).then(c => c.put(e.request, copy));
