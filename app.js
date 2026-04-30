@@ -1,4 +1,4 @@
-/* RPS Arena v3 — full rebuild */
+/* RPS Arena v4 — coins, small shop, History tab, Mystery Cup advance fix */
 
 const BOT_NAMES = [
   'undefeated','ultimate champion','worthy opponent','+aura','cant guess me',
@@ -10,12 +10,68 @@ const BOT_NAMES = [
   'rock intent','seer','rock most likely','say less'
 ];
 
-const PVP_NAMES = ['Shadow_X','GrindKing','Nova_88','PixelWarrior','ThunderPaw','Ace_RPS','IronFist','Blaze_Pro','CryptoK','VoidWalker','RapidFire','CosmicG','NeonRune','SilverFox','MachoMan','BoltZero','TempestZ','RiftRunner','OmegaOne','Vexx','ZenithKing','PhantomQ','GlitchMaster','HavokX','EchoStrike','MysticVoid','Drift_44'];
+const PVP_NAMES = ['Shadow_X','GrindKing','Nova_88','PixelWarrior','ThunderPaw','Ace_RPS','IronFist','Blaze_Pro','CryptoK','VoidWalker','RapidFire','CosmicG','NeonRune','SilverFox','MachoMan','BoltZero'];
 
-// Simple emoji pool for AI opponents (so it doesn't feel tied to shop catalog)
-const AI_OPP_EMOJIS = ['🤖','😈','🥷','🧙','👽','💀','👻','🤡','🦊','🐺','🦁','🐉','🦈','⚡','🔥','💎','👑','🐲','🦅','🐯'];
+const AI_OPP_EMOJIS = ['🤖','😈','🥷','🧙','👽','💀','👻','🤡','🦊','🐺','🦁','🐉','🦈','⚡','🔥','💎','👑'];
 
-// ELO tiers — scaled to support ±75 to ±135 swings
+// Small curated shop catalog (back to the version before 700)
+const SHOP_EMOJIS = [
+  // Default rock (free / unlocked)
+  { e:'🪨', name:'Rock', cat:'objects', price:0, rarity:'common' },
+  // Faces
+  { e:'😀', name:'Smile', cat:'faces', price:0, rarity:'common' },
+  { e:'😎', name:'Cool', cat:'faces', price:50, rarity:'common' },
+  { e:'🥶', name:'Cold', cat:'faces', price:50, rarity:'common' },
+  { e:'🤖', name:'Robot', cat:'faces', price:75, rarity:'common' },
+  { e:'😈', name:'Devil', cat:'faces', price:100, rarity:'common' },
+  { e:'🤠', name:'Cowboy', cat:'faces', price:100, rarity:'common' },
+  { e:'🤡', name:'Clown', cat:'faces', price:75, rarity:'common' },
+  { e:'👻', name:'Ghost', cat:'faces', price:120, rarity:'common' },
+  { e:'🥷', name:'Ninja', cat:'faces', price:150, rarity:'rare' },
+  { e:'🧙', name:'Wizard', cat:'faces', price:200, rarity:'rare' },
+  { e:'💀', name:'Skull', cat:'faces', price:150, rarity:'rare' },
+  { e:'👽', name:'Alien', cat:'faces', price:200, rarity:'rare' },
+  { e:'🧛', name:'Vampire', cat:'faces', price:250, rarity:'rare' },
+  { e:'🦸', name:'Hero', cat:'faces', price:400, rarity:'epic' },
+  { e:'🦹', name:'Villain', cat:'faces', price:400, rarity:'epic' },
+  // Animals
+  { e:'🐶', name:'Dog', cat:'animals', price:50, rarity:'common' },
+  { e:'🐱', name:'Cat', cat:'animals', price:50, rarity:'common' },
+  { e:'🦊', name:'Fox', cat:'animals', price:100, rarity:'common' },
+  { e:'🐻', name:'Bear', cat:'animals', price:120, rarity:'common' },
+  { e:'🐼', name:'Panda', cat:'animals', price:150, rarity:'rare' },
+  { e:'🦁', name:'Lion', cat:'animals', price:200, rarity:'rare' },
+  { e:'🐯', name:'Tiger', cat:'animals', price:200, rarity:'rare' },
+  { e:'🦅', name:'Eagle', cat:'animals', price:250, rarity:'rare' },
+  { e:'🦉', name:'Owl', cat:'animals', price:200, rarity:'rare' },
+  { e:'🐺', name:'Wolf', cat:'animals', price:300, rarity:'epic' },
+  { e:'🦈', name:'Shark', cat:'animals', price:350, rarity:'epic' },
+  { e:'🐉', name:'Dragon', cat:'animals', price:800, rarity:'epic' },
+  { e:'🦄', name:'Unicorn', cat:'animals', price:600, rarity:'epic' },
+  { e:'🐙', name:'Octopus', cat:'animals', price:200, rarity:'rare' },
+  { e:'🦖', name:'T-Rex', cat:'animals', price:500, rarity:'epic' },
+  // Objects
+  { e:'⚔️', name:'Swords', cat:'objects', price:100, rarity:'common' },
+  { e:'🛡️', name:'Shield', cat:'objects', price:100, rarity:'common' },
+  { e:'🏆', name:'Trophy', cat:'objects', price:300, rarity:'rare' },
+  { e:'💎', name:'Diamond', cat:'objects', price:400, rarity:'epic' },
+  { e:'⚡', name:'Bolt', cat:'objects', price:200, rarity:'rare' },
+  { e:'🔥', name:'Flame', cat:'objects', price:200, rarity:'rare' },
+  { e:'❄️', name:'Snowflake', cat:'objects', price:200, rarity:'rare' },
+  { e:'☄️', name:'Comet', cat:'objects', price:350, rarity:'epic' },
+  { e:'🌟', name:'Star', cat:'objects', price:300, rarity:'rare' },
+  { e:'👑', name:'Crown', cat:'objects', price:600, rarity:'epic' },
+  { e:'🎯', name:'Target', cat:'objects', price:150, rarity:'common' },
+  { e:'🃏', name:'Joker', cat:'objects', price:250, rarity:'rare' },
+  // Legendary
+  { e:'🌌', name:'Galaxy', cat:'legendary', price:1500, rarity:'legendary' },
+  { e:'🔱', name:'Trident', cat:'legendary', price:1200, rarity:'legendary' },
+  { e:'🗿', name:'Moai', cat:'legendary', price:1000, rarity:'legendary' },
+  { e:'🪬', name:'Hamsa', cat:'legendary', price:1800, rarity:'legendary' },
+  { e:'🏵️', name:'Rosette', cat:'legendary', price:1500, rarity:'legendary' },
+  { e:'⚜️', name:'Fleur-de-lis', cat:'legendary', price:2000, rarity:'legendary' },
+];
+
 const ELO_TIERS = [
   { name:'Bronze',      min:0,    max:1500,  color:'#cd7f32' },
   { name:'Silver',      min:1500, max:2300,  color:'#c0c0c0' },
@@ -28,8 +84,8 @@ const ELO_TIERS = [
 
 const DEFAULT_STATE = {
   username: 'Player',
-  avatar: '🪨',                    // default avatar (rock unlocked from start as default)
-  ownedEmojis: ['🪨'],              // start with just the rock
+  avatar: '🪨',
+  ownedEmojis: ['🪨'],
   balance: 1000,
   elo: 1000,
   wins: 0,
@@ -41,8 +97,7 @@ const DEFAULT_STATE = {
   tournaments: null,
   hasNamed: false,
   lastRewardedStreak: 0,
-  freshStartUsed: false,             // tracks one-time reset
-  rockUnlocked: true,                // rock is given by default; keep flag for legacy
+  freshStartUsed: false,
 };
 
 let state = loadState();
@@ -54,26 +109,29 @@ let runtime = {
   activeTourneyMatchIdx: null,
   modalCb: null,
   shopCat: 'all',
-  streakState: null, // {current, strikes, oppName, oppAvatar}
+  streakState: null,
 };
 
 function loadState() {
   try {
-    const raw = localStorage.getItem('rps-arena-state-v3');
+    const raw = localStorage.getItem('rps-arena-state-v4');
     if (raw) return { ...DEFAULT_STATE, ...JSON.parse(raw) };
-    // migrate from v2
+    // migrate from v3
+    const v3 = localStorage.getItem('rps-arena-state-v3');
+    if (v3) {
+      const old = JSON.parse(v3);
+      return { ...DEFAULT_STATE, ...old };
+    }
     const v2 = localStorage.getItem('rps-arena-state-v2');
     if (v2) {
       const old = JSON.parse(v2);
-      const migrated = { ...DEFAULT_STATE, ...old, balance: old.balance || 1000 };
-      // scale old elo (1000 base) to new tier range — keep value, larger tiers absorb it
-      return migrated;
+      return { ...DEFAULT_STATE, ...old, balance: old.balance || 1000 };
     }
   } catch(e) {}
   return { ...DEFAULT_STATE };
 }
 function saveState() {
-  try { localStorage.setItem('rps-arena-state-v3', JSON.stringify(state)); } catch(e) {}
+  try { localStorage.setItem('rps-arena-state-v4', JSON.stringify(state)); } catch(e) {}
 }
 
 function rnd(arr){return arr[Math.floor(Math.random()*arr.length)]}
@@ -95,11 +153,10 @@ function showView(id) {
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   const target = document.getElementById('view-' + id);
   if (target) target.classList.add('active');
-  const idx = { lobby: 0, profile: 1, shop: 2, leaderboard: 3 }[id];
+  const idx = { lobby: 0, profile: 1, history: 2, shop: 3 }[id];
   if (idx !== undefined) document.querySelectorAll('.nav-btn')[idx].classList.add('active');
   document.querySelector('.view-wrap').scrollTop = 0;
   if (id === 'lobby') hideLobbySections();
-  // toggle in-match class
   document.body.classList.toggle('in-match', id === 'game');
   updateHeader();
 }
@@ -162,7 +219,7 @@ const PVP_PRIZE = 90;
 function startFindMatch() {
   const e = document.getElementById('pvp-error');
   if (state.balance < PVP_ENTRY) {
-    e.textContent = 'Not enough tokens! Tap "+" to top up.';
+    e.textContent = 'Not enough coins! Tap "+" to top up.';
     e.style.display = 'block';
     return;
   }
@@ -188,13 +245,13 @@ function cancelSearch() {
 function startGame(mode, entry, prize, oppN, oppAvatar = '🤖', bo = 3, oppElo = null) {
   runtime.currentMode = mode;
   runtime.gameState = { entry, prize, opp: oppN, oppAvatar, oppElo, scoreYou: 0, scoreOpp: 0, round: 1, bo, done: false };
-  document.getElementById('opp-name').textContent = oppN.toUpperCase();
+  document.getElementById('opp-name').textContent = oppN;
   document.getElementById('opp-avatar').textContent = oppAvatar;
   document.getElementById('you-avatar').textContent = state.avatar;
-  document.getElementById('you-name').textContent = state.username.toUpperCase();
+  document.getElementById('you-name').textContent = state.username;
   document.getElementById('score-you').textContent = 0;
   document.getElementById('score-opp').textContent = 0;
-  document.getElementById('stake-label').textContent = entry > 0 ? entry + ' token entry' : (mode === 'streak' ? 'Streak Run' : 'Tournament');
+  document.getElementById('stake-label').textContent = entry > 0 ? entry + ' coin entry' : (mode === 'streak' ? 'Streak Run' : 'Tournament');
   document.getElementById('round-label').textContent = 'Best of ' + bo;
   document.getElementById('round-info').textContent = 'Round 1 of ' + bo + ' — make your pick';
   document.getElementById('choice-you').textContent = '?';
@@ -205,7 +262,6 @@ function startGame(mode, entry, prize, oppN, oppAvatar = '🤖', bo = 3, oppElo 
   document.getElementById('round-result').className = 'choice-result';
   ['btn-rock','btn-paper','btn-scissors'].forEach(id => document.getElementById(id).disabled = false);
 
-  // ELO display only for PvP
   const youEloEl = document.getElementById('you-elo');
   const oppEloEl = document.getElementById('opp-elo');
   if (mode === 'pvp' && oppElo != null) {
@@ -218,7 +274,6 @@ function startGame(mode, entry, prize, oppN, oppAvatar = '🤖', bo = 3, oppElo 
     oppEloEl.style.display = 'none';
   }
 
-  // streak HUD
   const streakHud = document.getElementById('streak-hud');
   if (mode === 'streak') {
     streakHud.style.display = 'flex';
@@ -273,8 +328,7 @@ function play(choice) {
 }
 
 function eloRandom() {
-  // returns int in [75, 135] inclusive
-  return Math.floor(Math.random() * 61) + 75;
+  return Math.floor(Math.random() * 61) + 75; // [75, 135]
 }
 
 function endGame(g) {
@@ -303,7 +357,7 @@ function endGame(g) {
       state.wins++; delta = g.prize;
       state.balance += g.prize; state.earned += g.prize;
       modal.classList.add('win'); title.textContent = 'YOU WIN'; title.classList.add('win');
-      detail.innerHTML = `+${g.prize} tokens earned`;
+      detail.innerHTML = `+${g.prize} coins earned`;
       eloChangeEl.textContent = `+${eloDelta} ELO`;
       eloChangeEl.classList.add('up');
       if (navigator.vibrate) navigator.vibrate([30, 50, 30, 50, 30]);
@@ -316,7 +370,7 @@ function endGame(g) {
       eloDelta = -eloRandom();
       state.elo = Math.max(0, state.elo + eloDelta);
       modal.classList.add('lose'); title.textContent = 'DEFEATED'; title.classList.add('lose');
-      detail.innerHTML = `-${g.entry} tokens`;
+      detail.innerHTML = `-${g.entry} coins`;
       eloChangeEl.textContent = `${eloDelta} ELO`;
       eloChangeEl.classList.add('down');
       delta = -g.entry;
@@ -355,7 +409,6 @@ function endGame(g) {
   saveState();
   updateBalance();
   updateHeader();
-  // show popup
   overlay.classList.add('open');
 }
 
@@ -384,38 +437,31 @@ function afterTourneyMatch(won) {
   m.done = true;
   m.winner = won ? 'You' : (m.p1 === 'You' ? m.p2 : m.p1);
 
+  const totalRounds = t.bracket.rounds.length;
   const nextRound = roundIdx + 1;
-  if (won && nextRound < t.bracket.rounds.length) {
+
+  // FIX: advance regardless of bracket size (Mystery Cup is 4-player → 2 rounds)
+  if (won && nextRound < totalRounds) {
     const nextMatchIdx = Math.floor(matchIdx / 2);
     const nm = t.bracket.rounds[nextRound][nextMatchIdx];
     if (matchIdx % 2 === 0) { nm.p1 = 'You'; nm.p1Avatar = state.avatar; }
     else { nm.p2 = 'You'; nm.p2Avatar = state.avatar; }
-    if (nextRound === 1) {
-      const otherSF = t.bracket.rounds[1][1 - nextMatchIdx];
-      if (otherSF.p1 && otherSF.p2 && !otherSF.done) {
-        const w = Math.random() < 0.5 ? otherSF.p1 : otherSF.p2;
-        otherSF.s1 = otherSF.p1 === w ? 2 : 1;
-        otherSF.s2 = otherSF.p2 === w ? 2 : 1;
-        otherSF.done = true; otherSF.winner = w;
-        const fin = t.bracket.rounds[2][0];
-        if (nextMatchIdx === 0) { fin.p2 = w; fin.p2Avatar = otherSF.p1 === w ? otherSF.p1Avatar : otherSF.p2Avatar; }
-        else { fin.p1 = w; fin.p1Avatar = otherSF.p1 === w ? otherSF.p1Avatar : otherSF.p2Avatar; }
-      }
-    }
   } else if (!won) {
-    // simulate rest
-    for (let ri = roundIdx; ri < t.bracket.rounds.length; ri++) {
-      for (const mm of t.bracket.rounds[ri]) {
+    // Simulate everything remaining when the player is eliminated
+    for (let ri = roundIdx; ri < totalRounds; ri++) {
+      for (let mi = 0; mi < t.bracket.rounds[ri].length; mi++) {
+        const mm = t.bracket.rounds[ri][mi];
         if (mm.done) continue;
         if (mm.p1 && mm.p2) {
           const w = Math.random() < 0.5 ? mm.p1 : mm.p2;
-          mm.s1 = mm.p1 === w ? 2 : 1; mm.s2 = mm.p2 === w ? 2 : 1;
+          mm.s1 = mm.p1 === w ? 2 : 1;
+          mm.s2 = mm.p2 === w ? 2 : 1;
           mm.done = true; mm.winner = w;
-          if (ri + 1 < t.bracket.rounds.length) {
-            const nmi = Math.floor(t.bracket.rounds[ri].indexOf(mm) / 2);
+          const wAv = mm.p1 === w ? mm.p1Avatar : mm.p2Avatar;
+          if (ri + 1 < totalRounds) {
+            const nmi = Math.floor(mi / 2);
             const nm = t.bracket.rounds[ri + 1][nmi];
-            const wAv = mm.p1 === w ? mm.p1Avatar : mm.p2Avatar;
-            if (t.bracket.rounds[ri].indexOf(mm) % 2 === 0) { nm.p1 = w; nm.p1Avatar = wAv; }
+            if (mi % 2 === 0) { nm.p1 = w; nm.p1Avatar = wAv; }
             else { nm.p2 = w; nm.p2Avatar = wAv; }
           }
         }
@@ -423,27 +469,28 @@ function afterTourneyMatch(won) {
     }
     t.complete = true;
   }
-  const fin = t.bracket.rounds[2][0];
+
+  // Check for grand final winner
+  const fin = t.bracket.rounds[totalRounds - 1][0];
   if (fin.done && fin.winner === 'You') {
     state.tourneysWon = (state.tourneysWon || 0) + 1;
     if (t.special) {
-      // Reward random emoji not yet owned
       const unowned = SHOP_EMOJIS.filter(em => !state.ownedEmojis.includes(em.e));
       if (unowned.length > 0) {
         const reward = unowned[Math.floor(Math.random() * unowned.length)];
         state.ownedEmojis.push(reward.e);
-        toast(`🏆 Champion! Won emoji: ${reward.e}`);
+        toast(`🏆 Champion! Won ${reward.e} ${reward.name}`);
       } else {
-        // No unowned left → grant tokens instead
         state.balance += 500;
-        toast('🏆 Champion! All emojis owned — +500 tokens');
+        toast('🏆 Champion! All emojis owned — +500 coins');
       }
     } else {
       state.balance += t.prize; state.earned += t.prize;
-      toast('🏆 Champion! +' + t.prize + ' tokens');
+      toast('🏆 Champion! +' + t.prize + ' coins');
     }
     t.complete = true;
   }
+
   saveState();
   updateBalance();
   updateHeader();
@@ -452,13 +499,12 @@ function afterTourneyMatch(won) {
 
 /* ---- STREAK MODE ---- */
 function startStreakRun() {
-  // One persistent bot per run
   runtime.streakState = {
     current: 0,
     strikes: 0,
     oppName: botName(),
     oppAvatar: aiOppEmoji(),
-    countedAsGame: false, // counts as a single game in stats
+    countedAsGame: false,
   };
   startStreakMatch();
 }
@@ -478,7 +524,6 @@ function handleStreakEnd(won, draw, modal, title, detail, eloChangeEl, actions) 
       state.bestStreak = ss.current;
       newRecord = true;
     }
-    // Reward an unowned emoji at NEW best, streak >= 5
     let rewardEmoji = null;
     if (newRecord && ss.current >= 5 && ss.current > state.lastRewardedStreak) {
       const unowned = SHOP_EMOJIS.filter(em => !state.ownedEmojis.includes(em.e));
@@ -516,12 +561,10 @@ function handleStreakEnd(won, draw, modal, title, detail, eloChangeEl, actions) 
     if (ss.strikes >= 2) {
       modal.classList.add('lose'); title.textContent = 'RUN OVER'; title.classList.add('lose');
       detail.innerHTML = `Final streak: <strong style="color:var(--gold)">${ss.current}</strong>` + (state.bestStreak === ss.current && ss.current > 0 ? ' · New best!' : '');
-      // Count as one game for stats
       if (!ss.countedAsGame) {
         state.games++;
         ss.countedAsGame = true;
       }
-      // record one streak entry in history
       state.history.unshift({
         opp: ss.oppName, oppAvatar: ss.oppAvatar,
         result: ss.current >= 5 ? 'W' : 'L',
@@ -549,7 +592,6 @@ function handleStreakEnd(won, draw, modal, title, detail, eloChangeEl, actions) 
 
 function continueStreak() { startStreakMatch(); }
 function endStreakRun() {
-  // Only count as a game if not already counted
   const ss = runtime.streakState;
   if (ss && !ss.countedAsGame) {
     state.games++;
@@ -578,7 +620,6 @@ const TOURNEY_TEMPLATES = [
 ];
 
 function initTourneys() {
-  // If older state with different templates, refresh
   if (!state.tournaments || !state.tournaments.length || !state.tournaments.find(t => t.name === 'Mystery Cup')) {
     state.tournaments = TOURNEY_TEMPLATES.map((t, i) => ({
       ...t, id: i, joined: false, bracket: null, complete: false,
@@ -595,13 +636,13 @@ function renderTourneyList() {
       : t.joined ? '<span style="font-size:10px;background:rgba(201,168,76,.2);color:var(--gold);padding:2px 6px;border-radius:3px">JOINED</span>' : '';
     const prizeBlock = t.special
       ? `<div class="tourney-prize special">${t.prizeLabel}</div><div class="tourney-entry">Win = unlock</div>`
-      : `<div class="tourney-prize">🎟️ ${t.prize}</div><div class="tourney-entry">Prize Pool</div>`;
+      : `<div class="tourney-prize">🪙 ${t.prize}</div><div class="tourney-entry">Prize Pool</div>`;
     return `
       <div class="tourney-card ${t.joined ? 'active-tourney' : ''} ${t.special ? 'special' : ''}">
         <div class="tourney-info">
           <div class="tourney-name">${t.name} ${status}</div>
           <div class="tourney-meta">
-            <span>🎟️ ${t.entry} entry</span>
+            <span>🪙 ${t.entry} entry</span>
             <span>👥 ${t.slots} spots</span>
             <span>${t.special ? '4-player' : '8-player'}</span>
           </div>
@@ -620,17 +661,17 @@ function renderTourneyList() {
 function promptJoinTourney(id) {
   const t = state.tournaments[id];
   const prizeText = t.special
-    ? `Prize: <strong style="color:var(--epic)">Random emoji of any rarity</strong> you don't already own`
-    : `Prize: <strong style="color:var(--gold)">${t.prize} tokens</strong>`;
+    ? `Prize: <strong style="color:var(--epic)">Random emoji</strong> you don't already own`
+    : `Prize: <strong style="color:var(--gold)">${t.prize} coins</strong>`;
   openModal('Join ' + t.name + '?',
-    `Entry: <strong style="color:var(--gold)">${t.entry} tokens</strong><br>${prizeText}<br>Format: ${t.special ? '4' : '8'}-player single elimination, best of 3.`,
+    `Entry: <strong style="color:var(--gold)">${t.entry} coins</strong><br>${prizeText}<br>Format: ${t.special ? '4' : '8'}-player single elimination, best of 3.`,
     () => joinTourney(id)
   );
 }
 
 function joinTourney(id) {
   const t = state.tournaments[id];
-  if (state.balance < t.entry) { toast('Not enough tokens!'); return; }
+  if (state.balance < t.entry) { toast('Not enough coins!'); return; }
   state.balance -= t.entry; updateBalance();
   t.joined = true; t.slots = Math.max(0, t.slots - 1);
   t.bracket = buildBracket(t);
@@ -647,16 +688,16 @@ function buildBracket(t) {
   }
   const playerCount = t.special ? 4 : 8;
   const players = ['You', ...names.slice(0, playerCount - 1)];
-  const playerAvatars = ['You'].concat(Array.from({length: playerCount - 1}, () => aiOppEmoji()));
+  const playerAvatars = [state.avatar].concat(Array.from({length: playerCount - 1}, () => aiOppEmoji()));
 
   if (playerCount === 4) {
     // 4-player: 2 SF + 1 final
     const sf = [
-      { p1: players[0], p2: players[1], p1Avatar: state.avatar, p2Avatar: playerAvatars[1], s1: null, s2: null, done: false },
+      { p1: players[0], p2: players[1], p1Avatar: playerAvatars[0], p2Avatar: playerAvatars[1], s1: null, s2: null, done: false },
       { p1: players[2], p2: players[3], p1Avatar: playerAvatars[2], p2Avatar: playerAvatars[3], s1: null, s2: null, done: false },
     ];
     const fin = [{ p1: null, p2: null, p1Avatar: null, p2Avatar: null, s1: null, s2: null, done: false }];
-    // simulate other SF
+    // Simulate the SF you're not in
     const idxYou = sf.findIndex(m => m.p1 === 'You' || m.p2 === 'You');
     const otherIdx = 1 - idxYou;
     const otherM = sf[otherIdx];
@@ -665,6 +706,7 @@ function buildBracket(t) {
     otherM.s2 = otherM.p2 === w ? 2 : 1;
     otherM.done = true; otherM.winner = w;
     const wAv = otherM.p1 === w ? otherM.p1Avatar : otherM.p2Avatar;
+    // Pre-fill the OTHER slot in final, leaving the player's slot empty until they win their SF
     if (idxYou === 0) { fin[0].p2 = w; fin[0].p2Avatar = wAv; }
     else { fin[0].p1 = w; fin[0].p1Avatar = wAv; }
     return { rounds: [sf, fin] };
@@ -672,7 +714,7 @@ function buildBracket(t) {
 
   // 8-player
   const r1 = [
-    { p1: players[0], p2: players[1], p1Avatar: state.avatar, p2Avatar: playerAvatars[1], s1: null, s2: null, done: false },
+    { p1: players[0], p2: players[1], p1Avatar: playerAvatars[0], p2Avatar: playerAvatars[1], s1: null, s2: null, done: false },
     { p1: players[2], p2: players[3], p1Avatar: playerAvatars[2], p2Avatar: playerAvatars[3], s1: null, s2: null, done: false },
     { p1: players[4], p2: players[5], p1Avatar: playerAvatars[4], p2Avatar: playerAvatars[5], s1: null, s2: null, done: false },
     { p1: players[6], p2: players[7], p1Avatar: playerAvatars[6], p2Avatar: playerAvatars[7], s1: null, s2: null, done: false },
@@ -728,8 +770,8 @@ function renderBracket(t) {
       if (isPlayerMatch) div.onclick = () => startTourneyMatch(t.id, ri, mi);
       const p1class = m.done ? (m.winner === m.p1 ? 'winner' : 'loser') : (m.p1 ? '' : 'tbd');
       const p2class = m.done ? (m.winner === m.p2 ? 'winner' : 'loser') : (m.p2 ? '' : 'tbd');
-      const p1Display = m.p1 === 'You' ? state.username.toUpperCase() : (m.p1 ? m.p1.toUpperCase() : 'TBD');
-      const p2Display = m.p2 === 'You' ? state.username.toUpperCase() : (m.p2 ? m.p2.toUpperCase() : 'TBD');
+      const p1Display = m.p1 === 'You' ? state.username : (m.p1 || 'TBD');
+      const p2Display = m.p2 === 'You' ? state.username : (m.p2 || 'TBD');
       div.innerHTML = `
         <div class="bracket-player ${p1class}">${p1Display}<span class="bracket-score">${m.s1 !== null ? m.s1 : ''}</span></div>
         <div class="bracket-player ${p2class}">${p2Display}<span class="bracket-score">${m.s2 !== null ? m.s2 : ''}</span></div>
@@ -779,7 +821,7 @@ function startTourneyMatch(tourneyId, roundIdx, matchIdx) {
 function renderHistory() {
   const el = document.getElementById('history-list');
   if (!state.history.length) {
-    el.innerHTML = '<div class="empty-state">No matches yet.</div>';
+    el.innerHTML = '<div class="empty-state">No matches yet.<br>Start playing!</div>';
     return;
   }
   el.innerHTML = state.history.map(h => {
@@ -787,12 +829,11 @@ function renderHistory() {
       ? `<span class="hist-elo ${h.eloDelta > 0 ? 'pos' : 'neg'}">${h.eloDelta > 0 ? '+' : ''}${h.eloDelta} ELO</span>`
       : `<span class="hist-elo zero">—</span>`;
     const av = h.oppAvatar || '🤖';
-    const oppName = (h.opp || 'Bot').toUpperCase();
     return `
       <div class="history-item">
         <span class="hist-result ${h.result}">${h.result}</span>
         <div class="hist-opp-row">
-          <div class="hist-opp"><span class="av">${av}</span> ${oppName}</div>
+          <div class="hist-opp"><span class="av">${av}</span> ${h.opp || 'Bot'}</div>
           <div style="color:var(--muted);font-size:10px">${h.mode} · ${h.score} · ${h.time}</div>
         </div>
         ${eloDisp}
@@ -804,7 +845,7 @@ function renderHistory() {
 /* ---- PROFILE ---- */
 function renderProfile() {
   document.getElementById('profile-avatar').textContent = state.avatar;
-  document.getElementById('profile-name').textContent = state.username.toUpperCase();
+  document.getElementById('profile-name').textContent = state.username;
   const tier = getTier(state.elo);
   document.getElementById('profile-tier').textContent = `${tier.name} · ${state.elo} ELO`;
   document.getElementById('profile-tier').style.color = tier.color;
@@ -815,7 +856,6 @@ function renderProfile() {
   document.getElementById('ps-streak').textContent = state.bestStreak;
   document.getElementById('ps-trophies').textContent = state.tourneysWon || 0;
   document.getElementById('ps-games').textContent = state.games;
-  // reset button
   if (state.freshStartUsed) {
     document.getElementById('reset-btn').style.display = 'none';
     document.getElementById('reset-used-note').style.display = 'block';
@@ -823,10 +863,6 @@ function renderProfile() {
     document.getElementById('reset-btn').style.display = 'block';
     document.getElementById('reset-used-note').style.display = 'none';
   }
-}
-
-function toggleAccordion(id) {
-  document.getElementById(id).classList.toggle('open');
 }
 
 function editName() {
@@ -861,7 +897,6 @@ function updateResetBtn() {
 }
 
 function doReset() {
-  // Preserve owned emojis and balance
   const keep = {
     ownedEmojis: state.ownedEmojis,
     avatar: state.avatar,
@@ -889,64 +924,42 @@ function setShopTab(el, cat) {
   renderShop();
 }
 
-const RARITY_ORDER = ['legendary', 'epic', 'rare', 'common'];
-const RARITY_LABEL = { legendary: 'Legendary', epic: 'Epic', rare: 'Rare', common: 'Common' };
+// Ascending rarity: common → rare → epic → legendary
+const RARITY_ORDER_ASC = ['common', 'rare', 'epic', 'legendary'];
 
 function renderShop() {
-  const el = document.getElementById('shop-content');
-  let pool = SHOP_EMOJIS;
-  if (runtime.shopCat !== 'all') {
-    pool = pool.filter(e => e.cat === runtime.shopCat);
-  }
-  let html = '';
+  const grid = document.getElementById('shop-grid');
+  const filtered = runtime.shopCat === 'all'
+    ? SHOP_EMOJIS
+    : runtime.shopCat === 'legendary'
+      ? SHOP_EMOJIS.filter(e => e.rarity === 'legendary')
+      : SHOP_EMOJIS.filter(e => e.cat === runtime.shopCat);
 
-  // Owned section first
-  const owned = pool.filter(e => state.ownedEmojis.includes(e.e));
-  if (owned.length) {
-    html += `<div class="shop-section-title owned">Owned (${owned.length})</div>`;
-    html += `<div class="shop-grid">` + owned.map(itemHtml).join('') + `</div>`;
-  }
+  // Sort ascending rarity, then ascending price within rarity
+  const sorted = [...filtered].sort((a, b) => {
+    const ra = RARITY_ORDER_ASC.indexOf(a.rarity);
+    const rb = RARITY_ORDER_ASC.indexOf(b.rarity);
+    if (ra !== rb) return ra - rb;
+    return a.price - b.price;
+  });
 
-  // Featured section (only for 'all' tab)
-  if (runtime.shopCat === 'all') {
-    const featured = SHOP_EMOJIS.filter(e => e.featured && !state.ownedEmojis.includes(e.e));
-    if (featured.length) {
-      html += `<div class="shop-section-title featured">⭐ Featured</div>`;
-      html += `<div class="shop-grid">` + featured.map(itemHtml).join('') + `</div>`;
-    }
-  }
-
-  // Rarity sections, descending
-  const unowned = pool.filter(e => !state.ownedEmojis.includes(e.e));
-  for (const r of RARITY_ORDER) {
-    const subset = unowned.filter(e => e.rarity === r);
-    if (!subset.length) continue;
-    // skip showing featured items twice in 'all' tab
-    const list = runtime.shopCat === 'all' ? subset.filter(e => !e.featured) : subset;
-    if (!list.length) continue;
-    // Sort by price desc within rarity
-    list.sort((a,b) => b.price - a.price);
-    html += `<div class="shop-section-title ${r}">${RARITY_LABEL[r]} (${list.length})</div>`;
-    html += `<div class="shop-grid">` + list.map(itemHtml).join('') + `</div>`;
-  }
-
-  el.innerHTML = html || '<div class="empty-state">No emojis in this category.</div>';
-}
-
-function itemHtml(em) {
-  const owned = state.ownedEmojis.includes(em.e);
-  const equipped = state.avatar === em.e;
-  let action;
-  if (equipped) action = '<div class="shop-action equipped">EQUIPPED</div>';
-  else if (owned) action = '<div class="shop-action owned">EQUIP</div>';
-  else action = `<div class="shop-action buy">🎟️ ${em.price}</div>`;
-  return `
-    <div class="shop-item ${equipped ? 'equipped' : ''}" onclick="shopAction('${em.e}')">
-      <div class="rarity-tag ${em.rarity}"></div>
-      <div class="shop-emoji">${em.e}</div>
-      ${action}
-    </div>
-  `;
+  grid.innerHTML = sorted.map(em => {
+    const owned = state.ownedEmojis.includes(em.e);
+    const equipped = state.avatar === em.e;
+    let action;
+    if (equipped) action = '<div class="shop-action equipped">EQUIPPED</div>';
+    else if (owned) action = '<div class="shop-action owned">TAP TO EQUIP</div>';
+    else if (em.price === 0) action = '<div class="shop-action free">FREE</div>';
+    else action = `<div class="shop-action buy">🪙 ${em.price}</div>`;
+    return `
+      <div class="shop-item ${equipped ? 'equipped' : ''}" onclick="shopAction('${em.e}')">
+        ${em.rarity !== 'common' ? `<div class="rarity-tag ${em.rarity}">${em.rarity}</div>` : ''}
+        <div class="shop-emoji">${em.e}</div>
+        <div class="shop-name">${em.name}</div>
+        ${action}
+      </div>
+    `;
+  }).join('');
 }
 
 function shopAction(emoji) {
@@ -958,12 +971,21 @@ function shopAction(emoji) {
     saveState();
     updateHeader();
     renderShop();
-    toast('Equipped ' + emoji);
+    toast('Equipped ' + item.name);
     return;
   }
-  if (state.balance < item.price) { toast('Not enough tokens'); return; }
-  openModal('Buy this emoji?',
-    `<div style="font-size:32px;text-align:center;margin:8px 0">${item.e}</div>Price: <strong style="color:var(--gold)">${item.price} tokens</strong><br>You'll have ${state.balance - item.price} after.`,
+  if (item.price === 0) {
+    state.ownedEmojis.push(emoji);
+    state.avatar = emoji;
+    saveState();
+    updateHeader();
+    renderShop();
+    toast('Unlocked ' + item.name);
+    return;
+  }
+  if (state.balance < item.price) { toast('Not enough coins'); return; }
+  openModal('Buy ' + item.name + '?',
+    `${item.e} <strong>${item.name}</strong><br>Price: <strong style="color:var(--gold)">${item.price} coins</strong><br>You'll have ${state.balance - item.price} coins after.`,
     () => {
       state.balance -= item.price;
       state.ownedEmojis.push(emoji);
@@ -972,45 +994,9 @@ function shopAction(emoji) {
       updateBalance();
       updateHeader();
       renderShop();
-      toast('Unlocked ' + emoji);
+      toast('Unlocked & equipped ' + item.name);
     }
   );
-}
-
-/* ---- LEADERBOARD ---- */
-function generateLeaderboard() {
-  // Synthetic leaderboard with 14 AI players + the user, sorted by ELO
-  // Use a deterministic-ish set per session so it doesn't flip wildly
-  const seed = state.elo;
-  const players = PVP_NAMES.slice(0, 14).map((n, i) => {
-    // Distribute around ELO range
-    const rand = ((seed * 9301 + i * 49297) % 233280) / 233280;
-    const baseElo = Math.floor(rand * 5500) + 800;
-    return { name: n, avatar: AI_OPP_EMOJIS[i % AI_OPP_EMOJIS.length], elo: baseElo, you: false };
-  });
-  players.push({ name: state.username, avatar: state.avatar, elo: state.elo, you: true });
-  players.sort((a, b) => b.elo - a.elo);
-  return players;
-}
-
-function renderLeaderboard() {
-  const players = generateLeaderboard();
-  const el = document.getElementById('lb-list');
-  el.innerHTML = players.map((p, i) => {
-    const tier = getTier(p.elo);
-    const rankClass = i < 3 ? 'top' : '';
-    return `
-      <div class="lb-row ${p.you ? 'you' : ''}">
-        <div class="lb-rank ${rankClass}">${i + 1}</div>
-        <div class="lb-avatar">${p.avatar}</div>
-        <div>
-          <div class="lb-name">${p.name.toUpperCase()}${p.you ? ' (YOU)' : ''}</div>
-          <div class="lb-tier" style="color:${tier.color}">${tier.name}</div>
-        </div>
-        <div style="margin-left:auto" class="lb-elo">${p.elo}</div>
-      </div>
-    `;
-  }).join('');
 }
 
 /* ---- MODAL & BUY ---- */
@@ -1027,7 +1013,7 @@ function openBuy() { document.getElementById('buy-modal').classList.add('open');
 function buyCoin(amt, price) {
   state.balance += amt; updateBalance();
   document.getElementById('buy-modal').classList.remove('open');
-  toast('+' + amt + ' tokens added (demo)');
+  toast('+' + amt + ' coins added (demo)');
 }
 
 /* ---- INSTALL HINT ---- */
