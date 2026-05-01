@@ -67,6 +67,8 @@
   .elo-hero::before{content:'';position:absolute;inset:-50%;background:radial-gradient(circle,rgba(201,168,76,.15) 0%,transparent 60%);pointer-events:none}
   .elo-rank-tier{font-size:11px;letter-spacing:.16em;font-weight:700;text-transform:uppercase;margin-bottom:6px;color:var(--rank-color,var(--gold))}
   .elo-rank{font-family:'Bebas Neue',sans-serif;font-size:54px;line-height:1;color:var(--gold);position:relative;font-weight:700}
+  .elo-rank-clickable{cursor:pointer;display:inline-block;padding:0 12px;border-radius:8px;transition:.15s;position:relative;z-index:1}
+  .elo-rank-clickable:active{background:rgba(201,168,76,.15);transform:scale(.98)}
   .elo-label{font-size:11px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-top:4px;font-weight:600}
   .elo-progress{margin-top:14px;height:6px;background:var(--surface3);border-radius:3px;overflow:hidden;position:relative}
   .elo-progress-fill{height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-light));border-radius:3px;transition:width .5s ease}
@@ -411,10 +413,10 @@
         Tap the <strong>Share</strong> icon below, then <strong>Add to Home Screen</strong>.
       </div>
 
-      <div class="elo-hero" id="elo-hero" onclick="showView('tiers');renderTiers()" style="cursor:pointer">
+      <div class="elo-hero" id="elo-hero">
         <div class="elo-rank-tier" id="elo-tier-name">UNRANKED</div>
-        <div class="elo-rank" id="elo-rating">1000</div>
-        <div class="elo-label">ELO Rating · tap for tier list</div>
+        <div class="elo-rank elo-rank-clickable" id="elo-rating" onclick="showView('tiers');renderTiers()">1000</div>
+        <div class="elo-label">ELO Rating</div>
         <div class="elo-progress">
           <div class="elo-progress-fill" id="elo-progress-fill" style="width:0%"></div>
         </div>
@@ -585,6 +587,7 @@
       <div class="section-title" style="margin-top:6px">Browse</div>
       <div class="shop-tabs" id="shop-tabs">
         <button class="shop-tab active" data-cat="all" onclick="setShopTab(this,'all')">All</button>
+        <button class="shop-tab" data-cat="owned" onclick="setShopTab(this,'owned')">Owned</button>
         <button class="shop-tab" data-cat="faces" onclick="setShopTab(this,'faces')">Faces</button>
         <button class="shop-tab" data-cat="hands" onclick="setShopTab(this,'hands')">People</button>
         <button class="shop-tab" data-cat="animals" onclick="setShopTab(this,'animals')">Animals</button>
@@ -592,7 +595,6 @@
         <button class="shop-tab" data-cat="activities" onclick="setShopTab(this,'activities')">Sports</button>
         <button class="shop-tab" data-cat="travel" onclick="setShopTab(this,'travel')">Travel</button>
         <button class="shop-tab" data-cat="objects" onclick="setShopTab(this,'objects')">Objects</button>
-        <button class="shop-tab" data-cat="symbols" onclick="setShopTab(this,'symbols')">Symbols</button>
         <button class="shop-tab" data-cat="plants" onclick="setShopTab(this,'plants')">Plants</button>
       </div>
       <div id="shop-content"></div>
@@ -655,22 +657,36 @@
       </div>
       <div id="friends-list" class="friends-list"></div>
     </div>
-  </div>
-</div>
 
-<!-- PLAYER PROFILE MODAL (opened from history) -->
-<div class="modal-overlay" id="player-modal">
-  <div class="modal" style="max-width:320px">
-    <div style="display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center">
-      <div style="width:80px;height:80px;border-radius:50%;background:var(--surface2);border:3px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:46px" id="player-modal-avatar">🤖</div>
-      <h3 id="player-modal-name" style="margin-bottom:0">Opponent</h3>
-      <div id="player-modal-tier" style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;font-weight:700"></div>
-    </div>
-    <div class="profile-stats" style="margin-top:14px" id="player-modal-stats"></div>
-    <div id="player-modal-result" style="margin-top:12px;text-align:center;font-size:12px;color:var(--muted);line-height:1.5"></div>
-    <div class="modal-btns">
-      <button class="btn-cancel" style="flex:1" onclick="closePlayerModal()">Close</button>
-      <button class="btn-confirm" id="player-modal-add-btn" style="flex:1" onclick="addFriendFromModal()">Add Friend</button>
+    <!-- PLAYER PROFILE (mirrors Profile tab structure, but for an opponent from history) -->
+    <div class="view" id="view-player">
+      <div class="back-bar">
+        <button onclick="showView('history');renderHistory()">← Back to History</button>
+        <div style="font-weight:700">Player Profile</div>
+      </div>
+      <div class="profile-hero">
+        <div class="big-avatar" style="cursor:default">
+          <span id="player-avatar">🤖</span>
+        </div>
+        <div>
+          <div class="profile-name-row">
+            <span id="player-name">Opponent</span>
+          </div>
+          <div class="profile-tier" id="player-tier">Unranked · 1000 ELO</div>
+        </div>
+      </div>
+      <div class="section-title">Head-to-Head</div>
+      <div class="profile-stats">
+        <div class="pstat"><div class="pstat-label">Wins vs You</div><div class="pstat-val" id="pp-wins">0</div></div>
+        <div class="pstat"><div class="pstat-label">Their Win Rate</div><div class="pstat-val" id="pp-winrate">—</div></div>
+        <div class="pstat"><div class="pstat-label">Net ELO Impact</div><div class="pstat-val" id="pp-elo-impact">0</div></div>
+        <div class="pstat"><div class="pstat-label">Best Streak vs You</div><div class="pstat-val" id="pp-streak">0</div></div>
+        <div class="pstat"><div class="pstat-label">Tourney Meetings</div><div class="pstat-val" id="pp-tourney-met">0</div></div>
+        <div class="pstat"><div class="pstat-label">Total Games</div><div class="pstat-val" id="pp-games">0</div></div>
+      </div>
+      <div class="section-title" style="margin-top:6px">Matches Against You</div>
+      <div id="pp-history" class="history-list"></div>
+      <button id="pp-friend-btn" onclick="addFriendFromPlayerView()" style="margin-top:8px;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:11px;cursor:pointer;font-size:13px;font-weight:600">Add Friend</button>
     </div>
   </div>
 </div>

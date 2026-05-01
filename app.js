@@ -135,8 +135,14 @@ function todayKey() {
 }
 function refreshFeatured() {
   const today = todayKey();
-  if (state.featuredDate === today && state.featuredEmojis && state.featuredEmojis.length > 0) return;
-  const pool = EMOJI_CATALOG.filter(e => e.e !== ROCK_EMOJI);
+  const pool = getShopPool();
+  // Verify cached featured: if any cached emoji is no longer in the allowed pool
+  // (e.g. it became challenge-locked, or its category was removed), force a re-roll.
+  if (state.featuredDate === today && state.featuredEmojis && state.featuredEmojis.length > 0) {
+    const allowed = new Set(pool.map(e => e.e));
+    const allValid = state.featuredEmojis.every(e => allowed.has(e));
+    if (allValid) return;
+  }
   const seed = today.split('-').reduce((a,b) => a + parseInt(b), 0);
   const picks = [];
   let s = seed;
@@ -522,7 +528,7 @@ function handleStreakEnd(won, draw) {
 
     let rewardEmoji = null;
     if (newRecord && ss.current >= 5 && ss.current > state.lastRewardedStreak) {
-      const unowned = EMOJI_CATALOG.filter(em => !state.ownedEmojis.includes(em.e) && em.e !== ROCK_EMOJI);
+      const unowned = getShopPool().filter(em => !state.ownedEmojis.includes(em.e));
       if (unowned.length > 0) {
         let pool = unowned;
         if (ss.current >= 15) {
@@ -862,7 +868,7 @@ function onTourneyMatchContinue(won) {
   if (fin.done && fin.winner === 'You') {
     if (t.special === 'emoji') {
       // Award a random emoji the player doesn't already own
-      const unowned = EMOJI_CATALOG.filter(em => !state.ownedEmojis.includes(em.e) && em.e !== ROCK_EMOJI);
+      const unowned = getShopPool().filter(em => !state.ownedEmojis.includes(em.e));
       if (unowned.length > 0) {
         const reward = unowned[Math.floor(Math.random() * unowned.length)];
         state.ownedEmojis.push(reward.e);
@@ -902,7 +908,7 @@ function renderHistory() {
     }
     const av = h.oppAvatar || '🤖';
     return `
-      <div class="history-item" onclick="openPlayerModal(${idx})">
+      <div class="history-item" onclick="openPlayerProfile(${idx})">
         <span class="hist-result ${h.result}">${h.result}</span>
         <div style="flex:1;min-width:0;font-size:12px">
           <div class="hist-opp-row"><span class="hist-opp-avatar">${av}</span> <span>${h.opp}</span></div>
@@ -1095,7 +1101,7 @@ const CHALLENGE_DEFS = [
   {
     id: 'rock_bottom',
     emoji: '🪤',
-    name: 'Rock Bottom',
+    name: 'Mouse Trap',
     desc: 'Reach 0 ELO.',
     progress: () => {
       // Goal is "lowest ELO must equal 0". Show inverted bar: lower lowestElo = more progress.
@@ -1199,12 +1205,36 @@ function shopItemHtml(item) {
   `;
 }
 
+// Emojis that can ONLY be unlocked through challenges (never browsable, never featured, never random rewards)
+function getChallengeLockedEmojis() {
+  // Returns the set of emojis tied to a challenge. Includes Rock + all CHALLENGE_DEFS emojis.
+  const set = new Set([ROCK_EMOJI]);
+  if (typeof CHALLENGE_DEFS !== 'undefined') {
+    for (const c of CHALLENGE_DEFS) set.add(c.emoji);
+  }
+  return set;
+}
+
+// Returns emojis the regular shop is allowed to surface (browse, featured, random rewards).
+// Excludes 'symbols' category and all challenge-locked emojis.
+function getShopPool() {
+  const locked = getChallengeLockedEmojis();
+  return EMOJI_CATALOG.filter(e => e.cat !== 'symbols' && !locked.has(e.e));
+}
+
 function renderShopBrowse() {
   const container = document.getElementById('shop-content');
-  const filtered = (runtime.shopCat === 'all'
-    ? EMOJI_CATALOG
-    : EMOJI_CATALOG.filter(e => e.cat === runtime.shopCat)
-  ).filter(e => e.e !== ROCK_EMOJI);
+  const pool = getShopPool();
+  let filtered;
+  if (runtime.shopCat === 'owned') {
+    // "Owned" virtual tab: every emoji the user owns, regardless of category. Includes
+    // challenge-claimed emojis so users can find/equip them here too.
+    filtered = EMOJI_CATALOG.filter(e => state.ownedEmojis.includes(e.e));
+  } else if (runtime.shopCat === 'all') {
+    filtered = pool;
+  } else {
+    filtered = pool.filter(e => e.cat === runtime.shopCat);
+  }
 
   // DESCENDING rarity (best first)
   const rarityOrder = ['legendary', 'epic', 'rare', 'common'];
@@ -1234,7 +1264,11 @@ function renderShopBrowse() {
       </div>
     `).join('');
 
-  container.innerHTML = sections || '<div class="empty-state">No emojis in this category.</div>';
+  const emptyMsg = runtime.shopCat === 'owned'
+    ? '<div class="empty-state">No emojis owned yet.<br>Buy some, or earn them through challenges.</div>'
+    : '<div class="empty-state">No emojis in this category.</div>';
+
+  container.innerHTML = sections || emptyMsg;
 }
 
 function shopAction(emoji) {
@@ -1430,70 +1464,138 @@ function removeFriend(idx) {
   toast('Removed ' + name);
 }
 
-/* ---- PLAYER PROFILE MODAL (from history) ---- */
-let _playerModalContext = null; // { name, avatar }
-function openPlayerModal(historyIdx) {
+/* ---- PLAYER PROFILE VIEW (from history; mirrors the Profile tab) ----
+   The opponent has no real persistent state, so all stats here are head-to-head
+   computed against the player's own history. Layout deliberately mirrors the
+   Profile tab so it feels like a real player profile, just adapted for context. */
+let _playerViewContext = null; // { name, avatar }
+
+function openPlayerProfile(historyIdx) {
   const h = state.history[historyIdx];
   if (!h) return;
-  _playerModalContext = { name: h.opp, avatar: h.oppAvatar || '🤖' };
+  const oppName = h.opp;
+  const oppAvatar = h.oppAvatar || '🤖';
+  _playerViewContext = { name: oppName, avatar: oppAvatar };
 
-  // Compute synthetic stats: how this player has performed against you across history
-  const matches = state.history.filter(x => x.opp === h.opp);
-  const w = matches.filter(x => x.result === 'L').length; // they won when you lost
-  const l = matches.filter(x => x.result === 'W').length;
-  const d = matches.filter(x => x.result === 'D').length;
+  // All recorded matches between this player and the user (across modes)
+  const matches = state.history.filter(x => x.opp === oppName);
+
+  // From the opponent's perspective: their wins are when YOU lost, etc.
+  const theirWins   = matches.filter(x => x.result === 'L').length;
+  const yourWins    = matches.filter(x => x.result === 'W').length;
+  const draws       = matches.filter(x => x.result === 'D').length;
+  const total       = matches.length;
+  const tourneyMet  = matches.filter(x => x.mode === 'Tourney').length;
+
+  // Net ELO impact this player has had on you (positive = they cost you ELO overall)
+  // h.eloDelta is YOUR delta after each match; flip sign for "their impact on you".
+  const netEloImpact = matches.reduce((acc, m) => acc + (m.eloDelta ? -m.eloDelta : 0), 0);
+
+  // Best run of consecutive wins THEY had against you (i.e. consecutive 'L' results in our history)
+  let bestStreakVsYou = 0, run = 0;
+  // Iterate in chronological order (history is reverse-chrono, so reverse it)
+  for (const m of [...matches].reverse()) {
+    if (m.result === 'L') { run++; if (run > bestStreakVsYou) bestStreakVsYou = run; }
+    else run = 0;
+  }
+
+  // Use the most recent match's recorded ELO (or 1000 fallback for streak/tourney rows)
   const oppElo = h.oppElo || 1000;
   const oppTier = getTier(oppElo);
 
-  document.getElementById('player-modal-avatar').textContent = h.oppAvatar || '🤖';
-  document.getElementById('player-modal-name').textContent = h.opp;
-  const tierEl = document.getElementById('player-modal-tier');
-  tierEl.textContent = oppTier.name + ' · ' + oppElo + ' ELO';
+  document.getElementById('player-avatar').textContent = oppAvatar;
+  document.getElementById('player-name').textContent = oppName;
+  const tierEl = document.getElementById('player-tier');
+  tierEl.textContent = `${oppTier.name} · ${oppElo} ELO`;
   tierEl.style.color = oppTier.color;
 
-  document.getElementById('player-modal-stats').innerHTML = `
-    <div class="pstat"><div class="pstat-label">Wins vs You</div><div class="pstat-val">${w}</div></div>
-    <div class="pstat"><div class="pstat-label">Losses vs You</div><div class="pstat-val">${l}</div></div>
-    <div class="pstat"><div class="pstat-label">Draws</div><div class="pstat-val">${d}</div></div>
-    <div class="pstat"><div class="pstat-label">Total Met</div><div class="pstat-val">${matches.length}</div></div>
-  `;
-  document.getElementById('player-modal-result').innerHTML =
-    `<strong style="color:var(--text)">Last match:</strong> ${h.mode} · ${h.score} · ${h.time}`;
+  document.getElementById('pp-wins').textContent = theirWins;
+  document.getElementById('pp-winrate').textContent = total > 0 ? Math.round(theirWins / total * 100) + '%' : '—';
+  const impactEl = document.getElementById('pp-elo-impact');
+  impactEl.textContent = (netEloImpact > 0 ? '+' : '') + netEloImpact;
+  impactEl.style.color = netEloImpact > 0 ? 'var(--danger)' : (netEloImpact < 0 ? 'var(--success)' : 'var(--gold)');
+  document.getElementById('pp-streak').textContent = bestStreakVsYou;
+  document.getElementById('pp-tourney-met').textContent = tourneyMet;
+  document.getElementById('pp-games').textContent = total;
 
-  // Hide "Add Friend" if already friends
-  const addBtn = document.getElementById('player-modal-add-btn');
-  const isFriend = (state.friends || []).some(f => f.name === h.opp);
-  if (isFriend) {
-    addBtn.disabled = true;
-    addBtn.textContent = 'Already Friends';
+  // Render their match list (W/L/D from THEIR perspective so it reads like their history)
+  const phist = document.getElementById('pp-history');
+  if (matches.length === 0) {
+    phist.innerHTML = '<div class="empty-state">No recorded matches.</div>';
   } else {
-    addBtn.disabled = false;
-    addBtn.textContent = 'Add Friend';
+    phist.innerHTML = matches.map(m => {
+      // Flip result perspective: your W is their L
+      const flipped = m.result === 'W' ? 'L' : (m.result === 'L' ? 'W' : 'D');
+      const eloFlip = m.eloDelta ? -m.eloDelta : 0;
+      let eloDisplay;
+      if (eloFlip !== 0) {
+        const cls = eloFlip > 0 ? 'pos' : 'neg';
+        const sign = eloFlip > 0 ? '+' : '';
+        eloDisplay = `<span class="hist-elo ${cls}">${sign}${eloFlip}</span>`;
+      } else {
+        eloDisplay = `<span class="hist-elo zero">—</span>`;
+      }
+      return `
+        <div class="history-item" style="cursor:default">
+          <span class="hist-result ${flipped}">${flipped}</span>
+          <div style="flex:1;min-width:0;font-size:12px">
+            <div class="hist-opp-row"><span class="hist-opp-avatar">${state.avatar}</span> <span>vs ${state.username}</span></div>
+            <div style="color:var(--muted);font-size:10px;font-weight:500">${m.mode} · ${m.time}</div>
+          </div>
+          <span style="color:var(--muted);font-size:11px">${m.score}</span>
+          ${eloDisplay}
+        </div>
+      `;
+    }).join('');
   }
-  document.getElementById('player-modal').classList.add('open');
+
+  // Friend button state
+  const friendBtn = document.getElementById('pp-friend-btn');
+  const isFriend = (state.friends || []).some(f => f.name === oppName);
+  if (isFriend) {
+    friendBtn.disabled = true;
+    friendBtn.style.opacity = '0.5';
+    friendBtn.style.cursor = 'not-allowed';
+    friendBtn.style.background = 'var(--surface2)';
+    friendBtn.style.color = 'var(--muted)';
+    friendBtn.textContent = 'Already Friends';
+  } else {
+    friendBtn.disabled = false;
+    friendBtn.style.opacity = '1';
+    friendBtn.style.cursor = 'pointer';
+    friendBtn.style.background = 'var(--accent)';
+    friendBtn.style.color = '#fff';
+    friendBtn.textContent = 'Add Friend';
+  }
+
+  showView('player');
 }
-function closePlayerModal() {
-  document.getElementById('player-modal').classList.remove('open');
-  _playerModalContext = null;
-}
-function addFriendFromModal() {
-  if (!_playerModalContext) return;
+
+function addFriendFromPlayerView() {
+  if (!_playerViewContext) return;
   if (!state.friends) state.friends = [];
-  if (state.friends.some(f => f.name === _playerModalContext.name)) {
+  if (state.friends.some(f => f.name === _playerViewContext.name)) {
     toast('Already friends');
     return;
   }
   state.friends.unshift({
-    name: _playerModalContext.name,
-    avatar: _playerModalContext.avatar,
+    name: _playerViewContext.name,
+    avatar: _playerViewContext.avatar,
     addedAt: new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
   });
   saveState();
   updateHeader();
-  closePlayerModal();
-  toast('Added ' + _playerModalContext.name);
+  toast('Added ' + _playerViewContext.name);
+  // Refresh view to update button state
+  const btn = document.getElementById('pp-friend-btn');
+  if (btn) {
+    btn.disabled = true;
+    btn.style.opacity = '0.5';
+    btn.style.background = 'var(--surface2)';
+    btn.style.color = 'var(--muted)';
+    btn.textContent = 'Already Friends';
+  }
 }
-
 
 function isStandalone() {
   return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
