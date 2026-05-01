@@ -15,7 +15,7 @@ const PVP_NAMES = ['Shadow_X','GrindKing','Nova_88','PixelWarrior','ThunderPaw',
 const ROCK_EMOJI = '🪨';
 
 // Single PvP tier - one match option
-const PVP_TIER = { label:'Ranked', entry:2, oppElo:1100, prize:4 };
+const PVP_TIER = { label:'Ranked', entry:1, oppElo:1100, prize:3 };
 
 const ELO_TIERS = [
   { name:'Bronze',      min:0,    max:1000, color:'#cd7f32' },
@@ -33,18 +33,28 @@ const DEFAULT_STATE = {
   ownedEmojis: ['😀'],
   balance: 10,    // tokens
   elo: 1000,
+  bestElo: 1000,        // highest ELO ever reached
+  lowestElo: 1000,      // lowest ELO ever reached
   wins: 0,
+  draws: 0,
+  losses: 0,
   games: 0,
   earned: 0,      // tokens earned net
-  bestStreak: 0,
+  bestStreak: 0,        // now: longest consecutive PvP-win streak
+  currentPvpStreak: 0,  // current consecutive PvP wins
   tourneysWon: 0,
   history: [],
   tournaments: null,
   hasReset: false,
   lastRewardedStreak: 0,
+  claimedChallenges: [], // ids of completed challenge claims (challenge emojis)
+  // Daily free tokens
+  lastDailyClaim: null,
   // Daily featured
   featuredDate: null,
   featuredEmojis: [],
+  // Friends list (cosmetic only)
+  friends: [],
   // Streak run state (persistent for a current run)
   currentStreakBot: null,
 };
@@ -189,6 +199,8 @@ function updateHeader() {
   document.getElementById('header-name').textContent = state.username.toUpperCase();
   const bsm = document.getElementById('best-streak-mini');
   if (bsm) bsm.textContent = state.bestStreak;
+  const fc = document.getElementById('friends-count-mini');
+  if (fc) fc.textContent = (state.friends || []).length;
   const soc = document.getElementById('shop-owned-count');
   if (soc) soc.textContent = state.ownedEmojis.length;
   renderEloHero();
@@ -251,7 +263,7 @@ function startFindMatch() {
     // For PvP, randomize opponent ELO near the player's rating to feel like real matchmaking
     const oppElo = randomOppEloNear(state.elo);
     const oppEmoji = randomBotEmoji();
-    startGame('pvp', tier.entry, tier.prize, pvpName(), oppEmoji, 3, oppElo);
+    startGame('pvp', tier.entry, tier.prize, botName(), oppEmoji, 3, oppElo);
   }, Math.random() * 2000 + 1200);
 }
 
@@ -389,10 +401,16 @@ function endGame(g) {
   if (runtime.currentMode === 'pvp') {
     eloDelta = calculateEloChange(state.elo, g.oppElo, won, draw);
     state.elo = Math.max(0, state.elo + eloDelta);
+    // Track ELO extremes
+    if (state.elo > (state.bestElo || 0)) state.bestElo = state.elo;
+    if (state.elo < (state.lowestElo === undefined ? state.elo : state.lowestElo)) state.lowestElo = state.elo;
 
     let title, detail, type;
     if (won) {
       state.wins++;
+      // Consecutive PvP win streak
+      state.currentPvpStreak = (state.currentPvpStreak || 0) + 1;
+      if (state.currentPvpStreak > (state.bestStreak || 0)) state.bestStreak = state.currentPvpStreak;
       delta = g.prize;
       state.balance += g.prize; state.earned += g.prize;
       type = 'win';
@@ -400,12 +418,16 @@ function endGame(g) {
       detail = `+${g.prize} tokens added to wallet`;
       if (navigator.vibrate) navigator.vibrate([30, 50, 30, 50, 30]);
     } else if (draw) {
+      state.draws = (state.draws || 0) + 1;
+      // Draw doesn't break the win streak — only losses do
       delta = g.entry;
       state.balance += g.entry;
       type = 'draw';
       title = 'DRAW';
       detail = 'Entry refunded';
     } else {
+      state.losses = (state.losses || 0) + 1;
+      state.currentPvpStreak = 0;
       type = 'lose';
       title = 'DEFEATED';
       detail = `-${g.entry} token${g.entry>1?'s':''} lost`;
@@ -418,8 +440,10 @@ function endGame(g) {
       result: won ? 'W' : draw ? 'D' : 'L',
       score: g.scoreYou + '-' + g.scoreOpp,
       eloDelta, mode: 'PvP',
+      youElo: state.elo, oppElo: g.oppElo,
       time: new Date().toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
     });
+    if (state.history.length > 100) state.history = state.history.slice(0, 100);
 
     updateBalance();
     saveState();
@@ -589,11 +613,11 @@ function leaveGame() {
 
 /* ---- TOURNAMENTS ---- */
 const TOURNEY_TEMPLATES = [
+  { name: 'Mystery Emoji Cup', entry: 10, prize: 0, slots: 4, special: 'emoji' },
   { name: 'Beginner Bash',  entry: 1,  prize: 6,  slots: 7, special: false },
   { name: 'Weekend Brawl',  entry: 2,  prize: 12, slots: 5, special: false },
   { name: 'Coin Clashers',  entry: 3,  prize: 20, slots: 6, special: false },
   { name: 'Elite Cup',      entry: 5,  prize: 35, slots: 3, special: false },
-  { name: 'Mystery Emoji Cup', entry: 10, prize: 0, slots: 4, special: 'emoji' },
 ];
 
 function initTourneys() {
@@ -603,14 +627,25 @@ function initTourneys() {
     }));
     saveState();
   } else {
-    // Migrate: ensure newer templates exist
-    for (let i = 0; i < TOURNEY_TEMPLATES.length; i++) {
-      if (!state.tournaments[i]) {
-        state.tournaments[i] = { ...TOURNEY_TEMPLATES[i], id: i, joined: false, bracket: null, complete: false };
-      } else if (state.tournaments[i].special === undefined) {
-        state.tournaments[i].special = TOURNEY_TEMPLATES[i].special || false;
+    // Migrate: re-order existing tournaments to match TOURNEY_TEMPLATES.
+    // Preserve per-tourney user state (joined, bracket, complete, slots) by name match;
+    // any new templates not present get added; ids are reassigned to new positions.
+    const byName = {};
+    for (const t of state.tournaments) byName[t.name] = t;
+    state.tournaments = TOURNEY_TEMPLATES.map((tpl, i) => {
+      const existing = byName[tpl.name];
+      if (existing) {
+        return {
+          ...tpl,                         // refresh template fields (entry/prize/special)
+          id: i,                          // new id position
+          joined: !!existing.joined,
+          bracket: existing.bracket || null,
+          complete: !!existing.complete,
+          slots: existing.slots !== undefined ? existing.slots : tpl.slots,
+        };
       }
-    }
+      return { ...tpl, id: i, joined: false, bracket: null, complete: false };
+    });
     saveState();
   }
 }
@@ -856,7 +891,7 @@ function renderHistory() {
     el.innerHTML = '<div class="empty-state">No matches yet.<br>Start playing!</div>';
     return;
   }
-  el.innerHTML = state.history.map(h => {
+  el.innerHTML = state.history.map((h, idx) => {
     let eloDisplay;
     if (h.eloDelta !== null && h.eloDelta !== 0) {
       const cls = h.eloDelta > 0 ? 'pos' : 'neg';
@@ -867,7 +902,7 @@ function renderHistory() {
     }
     const av = h.oppAvatar || '🤖';
     return `
-      <div class="history-item">
+      <div class="history-item" onclick="openPlayerModal(${idx})">
         <span class="hist-result ${h.result}">${h.result}</span>
         <div style="flex:1;min-width:0;font-size:12px">
           <div class="hist-opp-row"><span class="hist-opp-avatar">${av}</span> <span>${h.opp}</span></div>
@@ -974,6 +1009,7 @@ function setShopTab(el, cat) {
 
 function renderShop() {
   refreshFeatured();
+  renderDailyClaim();
   renderFeatured();
   renderChallenges();
   renderShopBrowse();
@@ -988,53 +1024,153 @@ function renderFeatured() {
   }).join('');
 }
 
-function renderChallenges() {
-  const list = document.getElementById('challenges-list');
-  const rockUnlocked = checkRockUnlocked();
-  const rockOwned = state.ownedEmojis.includes(ROCK_EMOJI);
-  const tProg = Math.min(state.tourneysWon || 0, 5);
-  const sProg = Math.min(state.bestStreak, 10);
-  let rockAction;
-  if (rockOwned && state.avatar === ROCK_EMOJI) rockAction = '<div class="shop-action equipped" style="margin-top:6px">EQUIPPED</div>';
-  else if (rockOwned) rockAction = `<button onclick="equipEmoji('${ROCK_EMOJI}')" style="margin-top:6px;background:var(--gold);color:#000;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.05em">EQUIP</button>`;
-  else if (rockUnlocked) rockAction = `<button onclick="claimRock()" style="margin-top:6px;background:var(--success);color:#fff;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.05em">CLAIM 🪨</button>`;
-  else rockAction = '<div class="shop-action locked" style="margin-top:6px">LOCKED</div>';
+/* ---- CHALLENGE DEFINITIONS ----
+   Each challenge unlocks a specific emoji. Some emojis already exist in the
+   catalog (and stay buyable normally) but completing the challenge grants them
+   for free. */
+const CHALLENGE_DEFS = [
+  // Rock Reborn — original challenge, dual-progress
+  {
+    id: 'rock_reborn',
+    emoji: ROCK_EMOJI,
+    name: 'Rock Reborn',
+    desc: 'Unlock the legendary Rock emoji.',
+    progress: () => [
+      { current: Math.min(state.tourneysWon || 0, 5), goal: 5, label: 'tournaments won' },
+      { current: Math.min(state.bestStreak || 0, 10), goal: 10, label: 'PvP win streak' },
+    ],
+  },
+  {
+    id: 'win_100',
+    emoji: '🗿',
+    name: 'Stone Cold',
+    desc: 'Win 100 matches.',
+    progress: () => [{ current: Math.min(state.wins || 0, 100), goal: 100, label: 'matches won' }],
+  },
+  {
+    id: 'win_50',
+    emoji: '👽',
+    name: 'Out of This World',
+    desc: 'Win 50 matches.',
+    progress: () => [{ current: Math.min(state.wins || 0, 50), goal: 50, label: 'matches won' }],
+  },
+  {
+    id: 'draw_30',
+    emoji: '🤓',
+    name: 'Mind Reader',
+    desc: 'Draw 30 matches.',
+    progress: () => [{ current: Math.min(state.draws || 0, 30), goal: 30, label: 'matches drawn' }],
+  },
+  {
+    id: 'lose_30',
+    emoji: '🥀',
+    name: 'Wilted',
+    desc: 'Lose 30 matches.',
+    progress: () => [{ current: Math.min(state.losses || 0, 30), goal: 30, label: 'matches lost' }],
+  },
+  {
+    id: 'tourney_25',
+    emoji: '🩻',
+    name: 'See Through',
+    desc: 'Win 25 tournaments.',
+    progress: () => [{ current: Math.min(state.tourneysWon || 0, 25), goal: 25, label: 'tournaments won' }],
+  },
+  {
+    id: 'collector_10',
+    emoji: '🪕',
+    name: 'Collector',
+    desc: 'Own 10 emojis.',
+    progress: () => [{ current: Math.min(state.ownedEmojis.length, 10), goal: 10, label: 'emojis owned' }],
+  },
+  {
+    id: 'top_tier',
+    emoji: '🧠',
+    name: 'Big Brain',
+    desc: 'Reach the highest ELO tier (Grandmaster).',
+    progress: () => {
+      const top = ELO_TIERS[ELO_TIERS.length - 1].min; // 2100
+      return [{ current: Math.min(state.bestElo || state.elo, top), goal: top, label: 'best ELO' }];
+    },
+  },
+  {
+    id: 'rock_bottom',
+    emoji: '🪤',
+    name: 'Rock Bottom',
+    desc: 'Reach 0 ELO.',
+    progress: () => {
+      // Goal is "lowest ELO must equal 0". Show inverted bar: lower lowestElo = more progress.
+      const start = 1000;
+      const lowest = state.lowestElo === undefined ? state.elo : state.lowestElo;
+      const dropped = Math.max(0, start - lowest);
+      return [{ current: Math.min(dropped, start), goal: start, label: lowest <= 0 ? 'reached 0 ELO' : 'ELO at ' + lowest }];
+    },
+  },
+];
 
-  const tDone = (state.tourneysWon || 0) >= 5;
-  const sDone = state.bestStreak >= 10;
-  const allDone = tDone && sDone;
-
-  list.innerHTML = `
-    <div class="challenge-card ${allDone ? 'complete' : ''}">
-      <div class="challenge-emoji">${ROCK_EMOJI}</div>
-      <div class="challenge-info">
-        <div class="challenge-name">Rock Reborn</div>
-        <div class="challenge-desc">Unlock the legendary Rock emoji.</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <div style="flex:1;min-width:120px">
-            <div class="challenge-progress"><div class="challenge-progress-fill ${tDone?'done':''}" style="width:${tProg/5*100}%"></div></div>
-            <div class="challenge-progress-text ${tDone?'done':''}">${tProg}/5 tournaments won</div>
-          </div>
-          <div style="flex:1;min-width:120px">
-            <div class="challenge-progress"><div class="challenge-progress-fill ${sDone?'done':''}" style="width:${sProg/10*100}%"></div></div>
-            <div class="challenge-progress-text ${sDone?'done':''}">${sProg}/10 streak record</div>
-          </div>
-        </div>
-        ${rockAction}
-      </div>
-    </div>
-  `;
+function isChallengeComplete(c) {
+  return c.progress().every(p => p.current >= p.goal);
 }
 
-function claimRock() {
-  if (!checkRockUnlocked()) { toast('Challenge not complete'); return; }
-  if (state.ownedEmojis.includes(ROCK_EMOJI)) { toast('Already claimed'); return; }
-  state.ownedEmojis.push(ROCK_EMOJI);
-  state.avatar = ROCK_EMOJI;
+function renderChallenges() {
+  const list = document.getElementById('challenges-list');
+  list.innerHTML = CHALLENGE_DEFS.map(c => {
+    const owned = state.ownedEmojis.includes(c.emoji);
+    const claimed = (state.claimedChallenges || []).includes(c.id);
+    const complete = isChallengeComplete(c);
+    const equipped = state.avatar === c.emoji;
+
+    let action;
+    if (equipped) {
+      action = '<div class="shop-action equipped" style="margin-top:6px">EQUIPPED</div>';
+    } else if (owned) {
+      action = `<button onclick="equipEmoji('${c.emoji}')" style="margin-top:6px;background:var(--gold);color:#000;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.05em">EQUIP</button>`;
+    } else if (complete && !claimed) {
+      action = `<button onclick="claimChallenge('${c.id}')" style="margin-top:6px;background:var(--success);color:#fff;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.05em">CLAIM ${c.emoji}</button>`;
+    } else {
+      action = '<div class="shop-action locked" style="margin-top:6px">LOCKED</div>';
+    }
+
+    const progressBars = c.progress().map(p => {
+      const done = p.current >= p.goal;
+      const pct = p.goal > 0 ? Math.min(100, p.current / p.goal * 100) : 0;
+      const labelText = p.goal === p.current && p.label.startsWith('reached')
+        ? p.label
+        : `${p.current}/${p.goal} ${p.label}`;
+      return `
+        <div style="flex:1;min-width:120px">
+          <div class="challenge-progress"><div class="challenge-progress-fill ${done?'done':''}" style="width:${pct}%"></div></div>
+          <div class="challenge-progress-text ${done?'done':''}">${labelText}</div>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="challenge-card ${complete ? 'complete' : ''}">
+        <div class="challenge-emoji">${c.emoji}</div>
+        <div class="challenge-info">
+          <div class="challenge-name">${c.name}</div>
+          <div class="challenge-desc">${c.desc}</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">${progressBars}</div>
+          ${action}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function claimChallenge(id) {
+  const c = CHALLENGE_DEFS.find(x => x.id === id);
+  if (!c) return;
+  if (!isChallengeComplete(c)) { toast('Challenge not complete'); return; }
+  if (state.ownedEmojis.includes(c.emoji)) { toast('Already owned'); return; }
+  state.ownedEmojis.push(c.emoji);
+  state.avatar = c.emoji;
+  if (!state.claimedChallenges) state.claimedChallenges = [];
+  if (!state.claimedChallenges.includes(id)) state.claimedChallenges.push(id);
   saveState();
   updateHeader();
   renderShop();
-  toast('🪨 ROCK unlocked & equipped!');
+  toast(c.emoji + ' ' + c.name + ' unlocked & equipped!');
   if (navigator.vibrate) navigator.vibrate([30, 50, 30, 50, 60]);
 }
 
@@ -1052,7 +1188,7 @@ function shopItemHtml(item) {
   const equipped = state.avatar === item.e;
   let action;
   if (equipped) action = '<div class="shop-action equipped">EQUIPPED</div>';
-  else if (owned) action = '<div class="shop-action owned">EQUIP</div>';
+  else if (owned) action = '<div class="shop-action owned">OWNED</div>';
   else action = `<div class="shop-action buy">▣ ${item.price}</div>`;
   return `
     <div class="shop-item ${equipped ? 'equipped' : ''}" onclick="shopAction('${item.e}')">
@@ -1070,8 +1206,8 @@ function renderShopBrowse() {
     : EMOJI_CATALOG.filter(e => e.cat === runtime.shopCat)
   ).filter(e => e.e !== ROCK_EMOJI);
 
-  // ASCENDING rarity (cheapest/most-common first)
-  const rarityOrder = ['common', 'rare', 'epic', 'legendary'];
+  // DESCENDING rarity (best first)
+  const rarityOrder = ['legendary', 'epic', 'rare', 'common'];
   const byRarity = {};
   for (const r of rarityOrder) byRarity[r] = [];
   for (const item of filtered) byRarity[item.rarity].push(item);
@@ -1152,7 +1288,213 @@ function buyTokens(amt, price) {
   toast('+' + amt + ' tokens added (demo)');
 }
 
-/* ---- INSTALL HINT ---- */
+/* ---- DAILY FREE TOKENS ---- */
+const DAILY_TOKEN_AMOUNT = 3;
+function claimDailyTokens() {
+  const today = todayKey();
+  if (state.lastDailyClaim === today) {
+    toast('Already claimed today — come back tomorrow!');
+    return;
+  }
+  state.balance += DAILY_TOKEN_AMOUNT;
+  state.earned += DAILY_TOKEN_AMOUNT;
+  state.lastDailyClaim = today;
+  saveState();
+  updateBalance();
+  renderDailyClaim();
+  toast('+' + DAILY_TOKEN_AMOUNT + ' free tokens claimed!');
+  if (navigator.vibrate) navigator.vibrate([20, 30, 40]);
+}
+function renderDailyClaim() {
+  const wrap = document.getElementById('daily-claim');
+  const btn = document.getElementById('daily-claim-btn');
+  const sub = document.getElementById('daily-claim-sub');
+  if (!wrap) return;
+  const claimed = state.lastDailyClaim === todayKey();
+  if (claimed) {
+    wrap.classList.add('claimed');
+    btn.disabled = true;
+    btn.textContent = 'CLAIMED';
+    sub.textContent = 'Come back tomorrow for ' + DAILY_TOKEN_AMOUNT + ' more';
+  } else {
+    wrap.classList.remove('claimed');
+    btn.disabled = false;
+    btn.textContent = 'CLAIM ▣ ' + DAILY_TOKEN_AMOUNT;
+    sub.textContent = 'Free ' + DAILY_TOKEN_AMOUNT + ' tokens, every day';
+  }
+}
+
+/* ---- TIER LIST VIEW ---- */
+function renderTiers() {
+  const summary = document.getElementById('tiers-summary');
+  const best = state.bestElo || state.elo;
+  summary.innerHTML = `
+    <div class="tiers-summary-item">
+      <div class="label">Current</div>
+      <div class="val" style="color:${getTier(state.elo).color}">${state.elo}</div>
+    </div>
+    <div class="tiers-summary-item">
+      <div class="label">Peak</div>
+      <div class="val" style="color:${getTier(best).color}">${best}</div>
+    </div>
+    <div class="tiers-summary-item">
+      <div class="label">Tier</div>
+      <div class="val" style="color:${getTier(state.elo).color}">${getTier(state.elo).name}</div>
+    </div>
+  `;
+  const list = document.getElementById('tiers-list');
+  const currentTier = getTier(state.elo);
+  const bestTier = getTier(best);
+  list.innerHTML = ELO_TIERS.slice().reverse().map(tier => {
+    const isCurrent = tier.name === currentTier.name;
+    const isPeak = tier.name === bestTier.name && bestTier.name !== currentTier.name;
+    const everReached = best >= tier.min;
+    const range = tier.max < 9999 ? `${tier.min}–${tier.max - 1} ELO` : `${tier.min}+ ELO`;
+
+    let badges = '';
+    if (isCurrent) badges += '<span class="tier-badge you">YOU</span>';
+    if (isPeak) badges += '<span class="tier-badge peak">PEAK</span>';
+
+    let progress = '';
+    if (isCurrent && tier.max < 9999) {
+      const into = state.elo - tier.min;
+      const span = tier.max - tier.min;
+      const pct = Math.max(0, Math.min(100, into / span * 100));
+      progress = `
+        <div style="margin-top:8px">
+          <div class="elo-progress" style="height:5px"><div class="elo-progress-fill" style="width:${pct}%;background:${tier.color}"></div></div>
+          <div style="font-size:10px;color:var(--muted);margin-top:3px;font-weight:600">${into} / ${span} into ${tier.name}</div>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="tier-row ${isCurrent ? 'current' : ''} ${everReached ? 'unlocked' : 'locked'}" style="--tier-c:${tier.color}">
+        <div class="tier-dot"></div>
+        <div class="tier-info">
+          <div class="tier-name">${tier.name}</div>
+          <div class="tier-range">${range}</div>
+          ${progress}
+        </div>
+        ${badges}
+      </div>
+    `;
+  }).join('');
+}
+
+/* ---- FRIENDS LIST ---- */
+function renderFriends() {
+  const list = document.getElementById('friends-list');
+  if (!state.friends || state.friends.length === 0) {
+    list.innerHTML = '<div class="empty-state">No friends yet.<br>Add someone above, or tap a recent opponent in your match history.</div>';
+    return;
+  }
+  list.innerHTML = state.friends.map((f, idx) => `
+    <div class="friend-item">
+      <div class="friend-avatar">${f.avatar || '🤖'}</div>
+      <div class="friend-info">
+        <div class="friend-name">${f.name}</div>
+        <div class="friend-meta">Added ${f.addedAt || 'recently'}</div>
+      </div>
+      <button class="friend-remove" onclick="removeFriend(${idx})">Remove</button>
+    </div>
+  `).join('');
+}
+function addFriend() {
+  const input = document.getElementById('friend-input');
+  const name = (input.value || '').trim().slice(0, 16);
+  if (!name) { toast('Enter a name'); return; }
+  if (!state.friends) state.friends = [];
+  if (state.friends.some(f => f.name.toLowerCase() === name.toLowerCase())) {
+    toast(name + ' is already in your friends list');
+    return;
+  }
+  state.friends.unshift({
+    name,
+    avatar: randomBotEmoji(),
+    addedAt: new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+  });
+  input.value = '';
+  saveState();
+  renderFriends();
+  updateHeader();
+  toast('Added ' + name);
+}
+function removeFriend(idx) {
+  if (!state.friends || !state.friends[idx]) return;
+  const name = state.friends[idx].name;
+  state.friends.splice(idx, 1);
+  saveState();
+  renderFriends();
+  updateHeader();
+  toast('Removed ' + name);
+}
+
+/* ---- PLAYER PROFILE MODAL (from history) ---- */
+let _playerModalContext = null; // { name, avatar }
+function openPlayerModal(historyIdx) {
+  const h = state.history[historyIdx];
+  if (!h) return;
+  _playerModalContext = { name: h.opp, avatar: h.oppAvatar || '🤖' };
+
+  // Compute synthetic stats: how this player has performed against you across history
+  const matches = state.history.filter(x => x.opp === h.opp);
+  const w = matches.filter(x => x.result === 'L').length; // they won when you lost
+  const l = matches.filter(x => x.result === 'W').length;
+  const d = matches.filter(x => x.result === 'D').length;
+  const oppElo = h.oppElo || 1000;
+  const oppTier = getTier(oppElo);
+
+  document.getElementById('player-modal-avatar').textContent = h.oppAvatar || '🤖';
+  document.getElementById('player-modal-name').textContent = h.opp;
+  const tierEl = document.getElementById('player-modal-tier');
+  tierEl.textContent = oppTier.name + ' · ' + oppElo + ' ELO';
+  tierEl.style.color = oppTier.color;
+
+  document.getElementById('player-modal-stats').innerHTML = `
+    <div class="pstat"><div class="pstat-label">Wins vs You</div><div class="pstat-val">${w}</div></div>
+    <div class="pstat"><div class="pstat-label">Losses vs You</div><div class="pstat-val">${l}</div></div>
+    <div class="pstat"><div class="pstat-label">Draws</div><div class="pstat-val">${d}</div></div>
+    <div class="pstat"><div class="pstat-label">Total Met</div><div class="pstat-val">${matches.length}</div></div>
+  `;
+  document.getElementById('player-modal-result').innerHTML =
+    `<strong style="color:var(--text)">Last match:</strong> ${h.mode} · ${h.score} · ${h.time}`;
+
+  // Hide "Add Friend" if already friends
+  const addBtn = document.getElementById('player-modal-add-btn');
+  const isFriend = (state.friends || []).some(f => f.name === h.opp);
+  if (isFriend) {
+    addBtn.disabled = true;
+    addBtn.textContent = 'Already Friends';
+  } else {
+    addBtn.disabled = false;
+    addBtn.textContent = 'Add Friend';
+  }
+  document.getElementById('player-modal').classList.add('open');
+}
+function closePlayerModal() {
+  document.getElementById('player-modal').classList.remove('open');
+  _playerModalContext = null;
+}
+function addFriendFromModal() {
+  if (!_playerModalContext) return;
+  if (!state.friends) state.friends = [];
+  if (state.friends.some(f => f.name === _playerModalContext.name)) {
+    toast('Already friends');
+    return;
+  }
+  state.friends.unshift({
+    name: _playerModalContext.name,
+    avatar: _playerModalContext.avatar,
+    addedAt: new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+  });
+  saveState();
+  updateHeader();
+  closePlayerModal();
+  toast('Added ' + _playerModalContext.name);
+}
+
+
 function isStandalone() {
   return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 }
