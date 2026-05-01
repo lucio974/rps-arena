@@ -67,8 +67,6 @@
   .elo-hero::before{content:'';position:absolute;inset:-50%;background:radial-gradient(circle,rgba(201,168,76,.15) 0%,transparent 60%);pointer-events:none}
   .elo-rank-tier{font-size:11px;letter-spacing:.16em;font-weight:700;text-transform:uppercase;margin-bottom:6px;color:var(--rank-color,var(--gold))}
   .elo-rank{font-family:'Bebas Neue',sans-serif;font-size:54px;line-height:1;color:var(--gold);position:relative;font-weight:700}
-  .elo-tier-clickable{cursor:pointer;display:inline-block;padding:4px 10px;border-radius:6px;transition:.15s;border:1px dashed transparent}
-  .elo-tier-clickable:active{background:rgba(201,168,76,.12);border-color:rgba(201,168,76,.4);transform:scale(.97)}
   .elo-label{font-size:11px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-top:4px;font-weight:600}
   .elo-progress{margin-top:14px;height:6px;background:var(--surface3);border-radius:3px;overflow:hidden;position:relative}
   .elo-progress-fill{height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-light));border-radius:3px;transition:width .5s ease}
@@ -214,6 +212,8 @@
   .bracket-player.winner{color:var(--gold)}
   .bracket-player.loser{color:var(--muted)}
   .bracket-player.tbd{color:var(--border);font-weight:500}
+  .bracket-player-clickable{cursor:pointer;border-radius:4px;transition:.12s}
+  .bracket-player-clickable:active{background:rgba(201,168,76,.18)}
   .bracket-score{font-size:11px;font-weight:700;min-width:14px;text-align:right}
 
   .history-list{display:flex;flex-direction:column;gap:8px}
@@ -228,7 +228,7 @@
   .hist-elo.neg{color:var(--danger)}
   .hist-elo.zero{color:var(--muted)}
   .hist-opp-row{display:flex;align-items:center;gap:0;font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .hist-opp-avatar{font-size:16px;margin-right:4px}
+  .hist-opp-avatar{font-size:14px;width:24px;height:24px;border-radius:50%;background:var(--surface2);border:1.5px solid var(--gold);display:inline-flex;align-items:center;justify-content:center;margin-right:6px;flex-shrink:0;line-height:1}
 
   .buy-btn{background:var(--surface2);border:1px solid var(--gold);color:var(--gold);
     border-radius:8px;padding:6px 10px;font-size:14px;font-weight:700;cursor:pointer;-webkit-user-select:none;line-height:1}
@@ -373,6 +373,12 @@
     padding:12px 14px;display:flex;align-items:center;gap:12px;font-size:13px}
   .friend-item-clickable{cursor:pointer;transition:.15s}
   .friend-item-clickable:active{transform:scale(.99);border-color:var(--gold)}
+  .friend-status{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.05em;flex-shrink:0;padding:5px 10px;border-radius:14px}
+  .friend-status.online{background:rgba(59,154,90,.15);color:var(--success)}
+  .friend-status.offline{background:rgba(136,136,136,.15);color:var(--muted)}
+  .friend-status-dot{width:8px;height:8px;border-radius:50%}
+  .friend-status.online .friend-status-dot{background:var(--success);box-shadow:0 0 6px rgba(59,154,90,.6)}
+  .friend-status.offline .friend-status-dot{background:var(--muted)}
   .friend-avatar{width:36px;height:36px;border-radius:50%;background:var(--surface2);
     border:1.5px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
   .friend-info{flex:1;min-width:0}
@@ -384,6 +390,21 @@
   /* HISTORY ITEM is now clickable */
   .history-item{cursor:pointer;transition:.15s}
   .history-item:active{transform:scale(.99);border-color:var(--gold)}
+
+  /* HISTORY PLAYER MODAL (compact) */
+  .hpm-modal{max-width:300px;padding:18px}
+  .hpm-hero{display:flex;flex-direction:column;align-items:center;gap:5px;text-align:center}
+  .hpm-avatar{width:64px;height:64px;border-radius:50%;background:var(--surface2);border:2.5px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:36px}
+  .hpm-name{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:.04em;font-weight:700;line-height:1.1}
+  .hpm-tier{font-size:10px;letter-spacing:.1em;text-transform:uppercase;font-weight:700}
+  .hpm-section-title{font-size:10px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;font-weight:600;margin-top:12px;margin-bottom:6px}
+  .hpm-stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+  .hpm-stats .pstat{padding:8px 8px;border-radius:8px}
+  .hpm-stats .pstat-label{font-size:8px;letter-spacing:.05em}
+  .hpm-stats .pstat-val{font-size:18px;margin-top:1px}
+  .hpm-last{margin-top:8px;font-size:10px;color:var(--muted);text-align:center;line-height:1.4}
+  .hpm-btns{display:flex;gap:8px;margin-top:12px}
+  .hpm-btn{flex:1;padding:9px 10px;font-size:12px;border-radius:8px;cursor:pointer;font-weight:600;font-family:inherit}
 </style>
 </head>
 <body>
@@ -416,9 +437,9 @@
       </div>
 
       <div class="elo-hero" id="elo-hero">
-        <div class="elo-rank-tier elo-tier-clickable" id="elo-tier-name" onclick="showView('tiers');renderTiers()">UNRANKED</div>
+        <div class="elo-rank-tier" id="elo-tier-name">UNRANKED</div>
         <div class="elo-rank" id="elo-rating">1000</div>
-        <div class="elo-label">ELO Rating</div>
+        <div class="elo-label" id="elo-rating-label" onclick="showView('tiers');renderTiers()" style="cursor:pointer">ELO Rating</div>
         <div class="elo-progress">
           <div class="elo-progress-fill" id="elo-progress-fill" style="width:0%"></div>
         </div>
@@ -578,7 +599,7 @@
 
       <div class="shop-featured" id="shop-featured">
         <div class="shop-featured-title">⭐ DAILY FEATURED</div>
-        <div class="shop-featured-sub" id="shop-featured-sub">Resets at midnight</div>
+        <div class="shop-featured-sub" id="shop-featured-sub">Rotates every 6 hours</div>
         <div class="shop-featured-grid" id="shop-featured-grid"></div>
       </div>
 
@@ -626,6 +647,8 @@
         <div class="pstat"><div class="pstat-label">Tourneys Won</div><div class="pstat-val" id="ps-trophies">0</div></div>
         <div class="pstat"><div class="pstat-label">Total Games</div><div class="pstat-val" id="ps-games">0</div></div>
       </div>
+      <div class="section-title" style="margin-top:6px">Owned Emojis (<span id="ps-collection-count">0</span>)</div>
+      <div id="ps-collection"></div>
       <button id="reset-btn" onclick="confirmReset()" style="margin-top:8px;background:none;border:1px solid var(--danger);color:var(--danger);border-radius:10px;padding:11px;cursor:pointer;font-size:13px;font-weight:600">Reset all progress (one-time)</button>
     </div>
 
@@ -687,7 +710,7 @@
         <div class="pstat"><div class="pstat-label">Total Games</div><div class="pstat-val" id="fp-games">0</div></div>
       </div>
       <div class="section-title" style="margin-top:6px">Owned Emojis (<span id="fp-collection-count">0</span>)</div>
-      <div id="fp-collection" class="shop-grid"></div>
+      <div id="fp-collection"></div>
       <button id="fp-remove-btn" style="margin-top:8px;background:none;border:1px solid var(--danger);color:var(--danger);border-radius:10px;padding:11px;cursor:pointer;font-size:13px;font-weight:600">Remove Friend</button>
     </div>
   </div>
@@ -695,18 +718,18 @@
 
 <!-- HISTORY PLAYER PROFILE WINDOW (modal opened from history list) -->
 <div class="modal-overlay" id="history-player-modal">
-  <div class="modal" style="max-width:340px">
-    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center">
-      <div style="width:88px;height:88px;border-radius:50%;background:var(--surface2);border:3px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:50px" id="hpm-avatar">🤖</div>
-      <h3 id="hpm-name" style="margin:0">Opponent</h3>
-      <div id="hpm-tier" style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;font-weight:700"></div>
+  <div class="modal hpm-modal">
+    <div class="hpm-hero">
+      <div class="hpm-avatar" id="hpm-avatar">🤖</div>
+      <div class="hpm-name" id="hpm-name">Opponent</div>
+      <div class="hpm-tier" id="hpm-tier"></div>
     </div>
-    <div class="section-title" style="margin-top:14px;margin-bottom:8px">Head-to-Head</div>
-    <div class="profile-stats" id="hpm-stats"></div>
-    <div id="hpm-last" style="margin-top:12px;font-size:11px;color:var(--muted);text-align:center;line-height:1.5"></div>
-    <div class="modal-btns">
-      <button class="btn-cancel" style="flex:1" onclick="closeHistoryPlayerModal()">Close</button>
-      <button class="btn-confirm" id="hpm-add-btn" style="flex:1" onclick="addFriendFromHistoryModal()">Add Friend</button>
+    <div class="hpm-section-title">Stats</div>
+    <div class="hpm-stats" id="hpm-stats"></div>
+    <div id="hpm-last" class="hpm-last"></div>
+    <div class="hpm-btns">
+      <button class="btn-cancel hpm-btn" onclick="closeHistoryPlayerModal()">Close</button>
+      <button class="btn-confirm hpm-btn" id="hpm-add-btn" onclick="addFriendFromHistoryModal()">Add Friend</button>
     </div>
   </div>
 </div>

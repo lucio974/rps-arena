@@ -52,6 +52,7 @@ const DEFAULT_STATE = {
   lastDailyClaim: null,
   // Daily featured
   featuredDate: null,
+  featuredBucket: null,  // 6-hour rotation key
   featuredEmojis: [],
   // Friends list (cosmetic only)
   friends: [],
@@ -135,22 +136,29 @@ function getTier(elo) {
   return ELO_TIERS[ELO_TIERS.length - 1];
 }
 
-/* DAILY FEATURED */
+/* FEATURED ROTATION (every 6 hours) */
 function todayKey() {
+  // Used for daily-token-claim and friend online-status seeding (still day-grained).
   const d = new Date();
   return d.getFullYear() + '-' + (d.getMonth()+1) + '-' + d.getDate();
 }
+function featuredBucketKey() {
+  // 4 buckets per day (00:00, 06:00, 12:00, 18:00 local time).
+  const d = new Date();
+  const slot = Math.floor(d.getHours() / 6); // 0..3
+  return d.getFullYear() + '-' + (d.getMonth()+1) + '-' + d.getDate() + '-' + slot;
+}
 function refreshFeatured() {
-  const today = todayKey();
+  const bucket = featuredBucketKey();
   const pool = getShopPool();
-  // Verify cached featured: if any cached emoji is no longer in the allowed pool
-  // (e.g. it became challenge-locked, or its category was removed), force a re-roll.
-  if (state.featuredDate === today && state.featuredEmojis && state.featuredEmojis.length > 0) {
+  // Verify cached featured: bucket match AND every emoji is still in the allowed pool.
+  if (state.featuredBucket === bucket && state.featuredEmojis && state.featuredEmojis.length > 0) {
     const allowed = new Set(pool.map(e => e.e));
     const allValid = state.featuredEmojis.every(e => allowed.has(e));
     if (allValid) return;
   }
-  const seed = today.split('-').reduce((a,b) => a + parseInt(b), 0);
+  // Seed from the bucket key so each 6-hour window has a stable but distinct selection.
+  const seed = bucket.split('-').reduce((a,b) => a + parseInt(b), 0);
   const picks = [];
   let s = seed;
   const seen = new Set();
@@ -159,7 +167,8 @@ function refreshFeatured() {
     const idx = Math.floor(s / 233280 * pool.length);
     if (!seen.has(idx)) { seen.add(idx); picks.push(pool[idx].e); }
   }
-  state.featuredDate = today;
+  state.featuredBucket = bucket;
+  state.featuredDate = bucket; // legacy; kept in sync but no longer the gate
   state.featuredEmojis = picks;
   saveState();
 }
@@ -625,6 +634,46 @@ function endStreakRun() {
 
 function leaveGame() {
   closeResultPopup();
+  const g = runtime.gameState;
+  const isForfeit = g && !g.done;
+
+  if (isForfeit && runtime.currentMode === 'pvp') {
+    // Forfeit a PvP match: count it as a full loss. No token refund (entry already deducted).
+    // Apply ELO loss as if you lost the match.
+    g.done = true;
+    state.games++;
+    state.losses = (state.losses || 0) + 1;
+    state.currentPvpStreak = 0;
+    const eloDelta = calculateEloChange(state.elo, g.oppElo, false, false);
+    state.elo = Math.max(0, state.elo + eloDelta);
+    if (state.elo < (state.lowestElo === undefined ? state.elo : state.lowestElo)) state.lowestElo = state.elo;
+
+    state.history.unshift({
+      opp: g.opp, oppAvatar: g.oppAvatar,
+      result: 'L',
+      score: 'Forfeit',
+      eloDelta, mode: 'PvP',
+      youElo: state.elo, oppElo: g.oppElo,
+      time: new Date().toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+    });
+    if (state.history.length > 100) state.history = state.history.slice(0, 100);
+
+    saveState();
+    updateBalance();
+    updateHeader();
+    toast('Forfeited — no refund · ' + eloDelta + ' ELO');
+    showView('lobby');
+    return;
+  }
+
+  if (isForfeit && runtime.currentMode === 'tourney') {
+    // Forfeit a tournament match: register as elimination via the existing flow.
+    g.done = true;
+    onTourneyMatchContinue(false);
+    return;
+  }
+
+  // Normal cleanup paths (game already ended)
   if (runtime.currentMode === 'tourney') showLobbyBracket(runtime.activeTourney);
   else if (runtime.currentMode === 'streak') endStreakRun();
   else showView('lobby');
@@ -774,6 +823,22 @@ function renderBracket(t) {
   const roundNames = ['Quarter', 'Semi', 'Final'];
   const bracketEl = document.getElementById('bracket-view');
   bracketEl.innerHTML = '';
+  // Helper: produce the inner HTML for one player slot. Tappable when it's a real
+  // opponent name (not 'You' / null / 'TBD'). When the surrounding match div is
+  // active (player's turn), we stopPropagation so tapping the opponent name shows
+  // their profile WITHOUT also starting the match.
+  function playerHtml(p, sideClass, score, matchIsActive) {
+    const isReal = p && p !== 'You' && p !== 'TBD';
+    const display = p === 'You' ? state.username : (p || 'TBD');
+    if (!isReal) {
+      return `<div class="bracket-player ${sideClass}">${display}<span class="bracket-score">${score !== null ? score : ''}</span></div>`;
+    }
+    // Escape the name for the inline JS string. Names come from PVP_NAMES (alnum+_).
+    const safe = String(p).replace(/'/g, "\\'");
+    const stop = matchIsActive ? 'event.stopPropagation();' : '';
+    return `<div class="bracket-player bracket-player-clickable ${sideClass}" onclick="${stop}openTourneyPlayerProfile('${safe}')">${display}<span class="bracket-score">${score !== null ? score : ''}</span></div>`;
+  }
+
   b.rounds.forEach((round, ri) => {
     const col = document.createElement('div');
     col.className = 'bracket-round';
@@ -785,11 +850,9 @@ function renderBracket(t) {
       if (isPlayerMatch) div.onclick = () => startTourneyMatch(t.id, ri, mi);
       const p1class = m.done ? (m.winner === m.p1 ? 'winner' : 'loser') : (m.p1 ? '' : 'tbd');
       const p2class = m.done ? (m.winner === m.p2 ? 'winner' : 'loser') : (m.p2 ? '' : 'tbd');
-      const p1Display = m.p1 === 'You' ? state.username : (m.p1 || 'TBD');
-      const p2Display = m.p2 === 'You' ? state.username : (m.p2 || 'TBD');
       div.innerHTML = `
-        <div class="bracket-player ${p1class}">${p1Display}<span class="bracket-score">${m.s1 !== null ? m.s1 : ''}</span></div>
-        <div class="bracket-player ${p2class}">${p2Display}<span class="bracket-score">${m.s2 !== null ? m.s2 : ''}</span></div>
+        ${playerHtml(m.p1, p1class, m.s1, isPlayerMatch)}
+        ${playerHtml(m.p2, p2class, m.s2, isPlayerMatch)}
       `;
       col.appendChild(div);
     });
@@ -949,6 +1012,13 @@ function renderProfile() {
   document.getElementById('ps-streak').textContent = state.bestStreak;
   document.getElementById('ps-trophies').textContent = state.tourneysWon || 0;
   document.getElementById('ps-games').textContent = state.games;
+
+  // Owned emojis collection — resolve each owned emoji string to a display record
+  // (challenge emojis become legendary via getEmojiInfo). Group by rarity desc.
+  const ownedItems = state.ownedEmojis.map(e => getEmojiInfo(e));
+  document.getElementById('ps-collection-count').textContent = ownedItems.length;
+  document.getElementById('ps-collection').innerHTML = renderOwnedCollectionHtml(ownedItems);
+
   const resetBtn = document.getElementById('reset-btn');
   if (state.hasReset) {
     resetBtn.disabled = true;
@@ -1102,7 +1172,7 @@ const CHALLENGE_DEFS = [
   {
     id: 'draw_30',
     emoji: '🤓',
-    name: 'Mind Reader',
+    name: 'What a Read!',
     desc: 'Draw 30 matches.',
     progress: () => [{ current: Math.min(state.draws || 0, 30), goal: 30, label: 'matches drawn' }],
   },
@@ -1124,17 +1194,27 @@ const CHALLENGE_DEFS = [
     id: 'collector_10',
     emoji: '🪕',
     name: 'Collector',
-    desc: 'Own 10 emojis.',
-    progress: () => [{ current: Math.min(state.ownedEmojis.length, 10), goal: 10, label: 'emojis owned' }],
+    desc: 'Collect 10 emojis (not counting the starter).',
+    progress: () => {
+      // Count owned emojis excluding the starter 😀. So a fresh user with just the starter
+      // is at 0/10; collecting 10 more (any source: shop, challenge, reward) completes it.
+      const collected = state.ownedEmojis.filter(e => e !== '😀').length;
+      return [{ current: Math.min(collected, 10), goal: 10, label: 'emojis collected' }];
+    },
   },
   {
     id: 'top_tier',
     emoji: '🧠',
-    name: 'Big Brain',
+    name: 'Head Games',
     desc: 'Reach the highest ELO tier (Grandmaster).',
     progress: () => {
       const top = ELO_TIERS[ELO_TIERS.length - 1].min; // 2100
-      return [{ current: Math.min(state.bestElo || state.elo, top), goal: top, label: 'best ELO' }];
+      // Live: track CURRENT ELO until challenge is complete. Once claimed (or once
+      // bestElo has crossed the threshold), the bar locks at full so it doesn't drop.
+      const claimed = (state.claimedChallenges || []).includes('top_tier');
+      const everReached = (state.bestElo || state.elo) >= top;
+      const current = (claimed || everReached) ? top : (state.elo || 0);
+      return [{ current: Math.min(current, top), goal: top, label: claimed || everReached ? 'reached Grandmaster' : 'current ELO ' + (state.elo || 0) }];
     },
   },
   {
@@ -1509,22 +1589,38 @@ function renderTiers() {
 }
 
 /* ---- FRIENDS LIST ---- */
+// Deterministic online status per friend per day (so it doesn't flicker mid-session
+// but does rotate). Seeded by name+avatar+date.
+function isFriendOnline(f) {
+  const seed = _hashStr((f.name || '') + '|' + (f.avatar || '') + '|' + todayKey());
+  // ~50% online
+  return (seed % 2) === 0;
+}
+
 function renderFriends() {
   const list = document.getElementById('friends-list');
   if (!state.friends || state.friends.length === 0) {
     list.innerHTML = '<div class="empty-state">No friends yet.<br>Add someone above, or tap a recent opponent in your match history.</div>';
     return;
   }
-  list.innerHTML = state.friends.map((f, idx) => `
-    <div class="friend-item friend-item-clickable" onclick="openFriendProfile(${idx})">
-      <div class="friend-avatar">${f.avatar || '🤖'}</div>
-      <div class="friend-info">
-        <div class="friend-name">${f.name}</div>
-        <div class="friend-meta">Added ${f.addedAt || 'recently'}</div>
+  list.innerHTML = state.friends.map((f, idx) => {
+    const online = isFriendOnline(f);
+    const statusClass = online ? 'online' : 'offline';
+    const statusText = online ? 'Online' : 'Offline';
+    return `
+      <div class="friend-item friend-item-clickable" onclick="openFriendProfile(${idx})">
+        <div class="friend-avatar">${f.avatar || '🤖'}</div>
+        <div class="friend-info">
+          <div class="friend-name">${f.name}</div>
+          <div class="friend-meta">Added ${f.addedAt || 'recently'}</div>
+        </div>
+        <div class="friend-status ${statusClass}">
+          <span class="friend-status-dot"></span>
+          <span class="friend-status-label">${statusText}</span>
+        </div>
       </div>
-      <button class="friend-remove" onclick="event.stopPropagation();removeFriend(${idx})">Remove</button>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 function addFriend() {
   const input = document.getElementById('friend-input');
@@ -1557,53 +1653,35 @@ function removeFriend(idx) {
 }
 
 /* ---- HISTORY PLAYER PROFILE (MODAL/WINDOW) ----
-   Tapping a row in match history pops up a window with head-to-head stats.
-   The opponent is an NPC with no real persistent state, so all stats are
-   computed from the player's own match history. */
+   Tapping a row in match history pops up a window with that opponent's
+   PERSONAL stats (synthetic, derived from name+avatar), not head-to-head. */
 let _historyPlayerCtx = null; // { name, avatar }
 
-function openPlayerProfile(historyIdx) {
-  const h = state.history[historyIdx];
-  if (!h) return;
-  const oppName = h.opp;
-  const oppAvatar = h.oppAvatar || '🤖';
-  _historyPlayerCtx = { name: oppName, avatar: oppAvatar };
+// Underlying renderer used by both history-row taps and tournament-name taps.
+function showHistoryPlayerModal(name, avatar) {
+  _historyPlayerCtx = { name, avatar };
+  const synth = getPlayerSyntheticProfile(name, avatar);
+  const tier = getTier(synth.elo);
 
-  // All recorded matches between this opponent and the user
-  const matches = state.history.filter(x => x.opp === oppName);
-  const theirWins  = matches.filter(x => x.result === 'L').length;
-  const yourWins   = matches.filter(x => x.result === 'W').length;
-  const draws      = matches.filter(x => x.result === 'D').length;
-  const total      = matches.length;
-  const tourneyMet = matches.filter(x => x.mode === 'Tourney').length;
-  const netEloImpact = matches.reduce((acc, m) => acc + (m.eloDelta ? -m.eloDelta : 0), 0);
-  let bestStreakVsYou = 0, run = 0;
-  for (const m of [...matches].reverse()) {
-    if (m.result === 'L') { run++; if (run > bestStreakVsYou) bestStreakVsYou = run; }
-    else run = 0;
-  }
-  const oppElo = h.oppElo || 1000;
-  const oppTier = getTier(oppElo);
-
-  document.getElementById('hpm-avatar').textContent = oppAvatar;
-  document.getElementById('hpm-name').textContent = oppName;
+  document.getElementById('hpm-avatar').textContent = avatar || '🤖';
+  document.getElementById('hpm-name').textContent = name;
   const tierEl = document.getElementById('hpm-tier');
-  tierEl.textContent = `${oppTier.name} · ${oppElo} ELO`;
-  tierEl.style.color = oppTier.color;
+  tierEl.textContent = `${tier.name} · ${synth.elo} ELO`;
+  tierEl.style.color = tier.color;
 
+  // PERSONAL stats (their own profile), not head-to-head against the user.
   document.getElementById('hpm-stats').innerHTML = `
-    <div class="pstat"><div class="pstat-label">Wins vs You</div><div class="pstat-val">${theirWins}</div></div>
-    <div class="pstat"><div class="pstat-label">Their Win Rate</div><div class="pstat-val">${total > 0 ? Math.round(theirWins/total*100) + '%' : '—'}</div></div>
-    <div class="pstat"><div class="pstat-label">Net ELO Impact</div><div class="pstat-val" style="color:${netEloImpact > 0 ? 'var(--danger)' : netEloImpact < 0 ? 'var(--success)' : 'var(--gold)'}">${(netEloImpact > 0 ? '+' : '') + netEloImpact}</div></div>
-    <div class="pstat"><div class="pstat-label">Best Streak vs You</div><div class="pstat-val">${bestStreakVsYou}</div></div>
-    <div class="pstat"><div class="pstat-label">Tourney Meetings</div><div class="pstat-val">${tourneyMet}</div></div>
-    <div class="pstat"><div class="pstat-label">Total Games</div><div class="pstat-val">${total}</div></div>
+    <div class="pstat"><div class="pstat-label">Wins</div><div class="pstat-val">${synth.wins}</div></div>
+    <div class="pstat"><div class="pstat-label">Win Rate</div><div class="pstat-val">${synth.winRatePct}%</div></div>
+    <div class="pstat"><div class="pstat-label">Earned</div><div class="pstat-val">${synth.earned}</div></div>
+    <div class="pstat"><div class="pstat-label">Best Streak</div><div class="pstat-val">${synth.streak}</div></div>
+    <div class="pstat"><div class="pstat-label">Trophies</div><div class="pstat-val">${synth.trophies}</div></div>
+    <div class="pstat"><div class="pstat-label">Games</div><div class="pstat-val">${synth.games}</div></div>
   `;
-  document.getElementById('hpm-last').innerHTML =
-    `<strong style="color:var(--text)">Last:</strong> ${h.mode} · ${h.score} · ${h.time}`;
+  document.getElementById('hpm-last').innerHTML = '';
 
   const addBtn = document.getElementById('hpm-add-btn');
-  const isFriend = (state.friends || []).some(f => f.name === oppName);
+  const isFriend = (state.friends || []).some(f => f.name === name);
   if (isFriend) {
     addBtn.disabled = true;
     addBtn.textContent = 'Already Friends';
@@ -1613,6 +1691,27 @@ function openPlayerProfile(historyIdx) {
   }
 
   document.getElementById('history-player-modal').classList.add('open');
+}
+
+function openPlayerProfile(historyIdx) {
+  const h = state.history[historyIdx];
+  if (!h) return;
+  showHistoryPlayerModal(h.opp, h.oppAvatar || '🤖');
+  // Append last-match line (history-specific context)
+  document.getElementById('hpm-last').innerHTML =
+    `<strong style="color:var(--text)">Last:</strong> ${h.mode} · ${h.score} · ${h.time}`;
+}
+
+// Open the same window for a tournament opponent (by name only — generate avatar deterministically).
+function openTourneyPlayerProfile(name) {
+  if (!name || name === 'You' || name === 'TBD') return;
+  // Use a deterministic emoji from the shop pool seeded by name, so the same tourney
+  // opponent always renders with the same avatar in this window.
+  const pool = getShopPool();
+  const seed = _hashStr(name);
+  const idx = pool.length > 0 ? (seed % pool.length) : 0;
+  const avatar = pool.length > 0 ? pool[idx].e : '🤖';
+  showHistoryPlayerModal(name, avatar);
 }
 
 function closeHistoryPlayerModal() {
@@ -1666,8 +1765,10 @@ function _seededRand(seed) {
 }
 
 // Generate a stable synthetic profile object for a friend by name+avatar.
-function getFriendSyntheticProfile(friend) {
-  const seed = _hashStr(friend.name + '|' + (friend.avatar || ''));
+// Generate stable synthetic stats for any opponent (friend, history opp, tournament opp).
+// Seeded by name+avatar so the same player always shows the same numbers across visits.
+function getPlayerSyntheticProfile(name, avatar) {
+  const seed = _hashStr((name || '') + '|' + (avatar || ''));
   const r = _seededRand(seed);
   const games = 20 + Math.floor(r() * 480);            // 20–500 games
   const winRatePct = 30 + Math.floor(r() * 50);        // 30–79% win rate
@@ -1693,6 +1794,47 @@ function getFriendSyntheticProfile(friend) {
   }
   return { games, wins, winRatePct, earned, streak, trophies, elo, collection };
 }
+// Backward-compat shim used in friend profile
+function getFriendSyntheticProfile(friend) {
+  return getPlayerSyntheticProfile(friend.name, friend.avatar);
+}
+
+// Shared renderer for an "owned emojis" collection grid: groups by rarity descending,
+// dedupes by emoji key, and uses the read-only shop-item visual.
+function renderOwnedCollectionHtml(items) {
+  if (!items || items.length === 0) {
+    return '<div class="empty-state">No emojis owned yet.</div>';
+  }
+  // Dedupe by emoji-key
+  const seenE = new Set();
+  const unique = items.filter(item => {
+    if (seenE.has(item.e)) return false;
+    seenE.add(item.e);
+    return true;
+  });
+  // Bucket by rarity
+  const order = ['legendary', 'epic', 'rare', 'common'];
+  const byRarity = { legendary: [], epic: [], rare: [], common: [] };
+  for (const item of unique) {
+    const bucket = byRarity[item.rarity] ? item.rarity : 'common';
+    byRarity[bucket].push(item);
+  }
+  // Render section headers + grids per rarity
+  return order.filter(r => byRarity[r].length > 0).map(r => `
+    <div class="shop-rarity-section">
+      <div class="shop-rarity-header ${r}">${r.toUpperCase()} <span class="count">· ${byRarity[r].length}</span></div>
+      <div class="shop-grid">
+        ${byRarity[r].map(item => `
+          <div class="shop-item" style="cursor:default">
+            <div class="shop-emoji">${item.e}</div>
+            <div class="shop-name">${item.name}</div>
+            <div class="shop-action ${item.rarity}">${item.rarity.toUpperCase()}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
+}
 
 let _friendProfileIdx = null;
 function openFriendProfile(idx) {
@@ -1717,30 +1859,28 @@ function openFriendProfile(idx) {
 
   document.getElementById('fp-collection-count').textContent = synth.collection.length;
   const collEl = document.getElementById('fp-collection');
-  if (synth.collection.length === 0) {
-    collEl.innerHTML = '<div class="empty-state" style="grid-column:1/-1">No emojis owned yet.</div>';
-  } else {
-    // Reuse shop-item visual (read-only — no click action for friend collections)
-    collEl.innerHTML = synth.collection.map(item => `
-      <div class="shop-item" style="cursor:default">
-        <div class="shop-emoji">${item.e}</div>
-        <div class="shop-name">${item.name}</div>
-        <div class="shop-action ${item.rarity}">${item.rarity.toUpperCase()}</div>
-      </div>
-    `).join('');
-  }
+  collEl.innerHTML = renderOwnedCollectionHtml(synth.collection);
 
-  // Wire the remove button (closure over current idx)
+  // Wire the remove button (closure over current idx) — uses the generic confirm modal.
   const rmBtn = document.getElementById('fp-remove-btn');
   rmBtn.onclick = () => {
     if (!state.friends || !state.friends[_friendProfileIdx]) return;
-    const name = state.friends[_friendProfileIdx].name;
-    state.friends.splice(_friendProfileIdx, 1);
-    saveState();
-    updateHeader();
-    toast('Removed ' + name);
-    showView('friends');
-    renderFriends();
+    const friendName = state.friends[_friendProfileIdx].name;
+    openModal('Remove ' + friendName + '?',
+      `Are you sure you want to remove <strong style="color:var(--text)">${friendName}</strong> from your friends list?`,
+      () => {
+        if (!state.friends || !state.friends[_friendProfileIdx]) return;
+        const stillThereName = state.friends[_friendProfileIdx].name;
+        // Verify the friend at this idx is the same one (defensive — list could change)
+        if (stillThereName !== friendName) return;
+        state.friends.splice(_friendProfileIdx, 1);
+        saveState();
+        updateHeader();
+        toast('Removed ' + friendName);
+        showView('friends');
+        renderFriends();
+      }
+    );
   };
 
   showView('friend-profile');
