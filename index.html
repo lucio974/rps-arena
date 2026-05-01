@@ -67,8 +67,8 @@
   .elo-hero::before{content:'';position:absolute;inset:-50%;background:radial-gradient(circle,rgba(201,168,76,.15) 0%,transparent 60%);pointer-events:none}
   .elo-rank-tier{font-size:11px;letter-spacing:.16em;font-weight:700;text-transform:uppercase;margin-bottom:6px;color:var(--rank-color,var(--gold))}
   .elo-rank{font-family:'Bebas Neue',sans-serif;font-size:54px;line-height:1;color:var(--gold);position:relative;font-weight:700}
-  .elo-rank-clickable{cursor:pointer;display:inline-block;padding:0 12px;border-radius:8px;transition:.15s;position:relative;z-index:1}
-  .elo-rank-clickable:active{background:rgba(201,168,76,.15);transform:scale(.98)}
+  .elo-tier-clickable{cursor:pointer;display:inline-block;padding:4px 10px;border-radius:6px;transition:.15s;border:1px dashed transparent}
+  .elo-tier-clickable:active{background:rgba(201,168,76,.12);border-color:rgba(201,168,76,.4);transform:scale(.97)}
   .elo-label{font-size:11px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-top:4px;font-weight:600}
   .elo-progress{margin-top:14px;height:6px;background:var(--surface3);border-radius:3px;overflow:hidden;position:relative}
   .elo-progress-fill{height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-light));border-radius:3px;transition:width .5s ease}
@@ -371,6 +371,8 @@
   .friends-list{display:flex;flex-direction:column;gap:8px}
   .friend-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;
     padding:12px 14px;display:flex;align-items:center;gap:12px;font-size:13px}
+  .friend-item-clickable{cursor:pointer;transition:.15s}
+  .friend-item-clickable:active{transform:scale(.99);border-color:var(--gold)}
   .friend-avatar{width:36px;height:36px;border-radius:50%;background:var(--surface2);
     border:1.5px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
   .friend-info{flex:1;min-width:0}
@@ -414,8 +416,8 @@
       </div>
 
       <div class="elo-hero" id="elo-hero">
-        <div class="elo-rank-tier" id="elo-tier-name">UNRANKED</div>
-        <div class="elo-rank elo-rank-clickable" id="elo-rating" onclick="showView('tiers');renderTiers()">1000</div>
+        <div class="elo-rank-tier elo-tier-clickable" id="elo-tier-name" onclick="showView('tiers');renderTiers()">UNRANKED</div>
+        <div class="elo-rank" id="elo-rating">1000</div>
         <div class="elo-label">ELO Rating</div>
         <div class="elo-progress">
           <div class="elo-progress-fill" id="elo-progress-fill" style="width:0%"></div>
@@ -658,35 +660,53 @@
       <div id="friends-list" class="friends-list"></div>
     </div>
 
-    <!-- PLAYER PROFILE (mirrors Profile tab structure, but for an opponent from history) -->
-    <div class="view" id="view-player">
+    <!-- FRIEND PROFILE PAGE (full view; mirrors Profile tab; shown when tapping a friend) -->
+    <div class="view" id="view-friend-profile">
       <div class="back-bar">
-        <button onclick="showView('history');renderHistory()">← Back to History</button>
-        <div style="font-weight:700">Player Profile</div>
+        <button onclick="showView('friends');renderFriends()">← Back to Friends</button>
+        <div style="font-weight:700">Friend Profile</div>
       </div>
       <div class="profile-hero">
         <div class="big-avatar" style="cursor:default">
-          <span id="player-avatar">🤖</span>
+          <span id="fp-avatar">🤖</span>
         </div>
         <div>
           <div class="profile-name-row">
-            <span id="player-name">Opponent</span>
+            <span id="fp-name">Friend</span>
           </div>
-          <div class="profile-tier" id="player-tier">Unranked · 1000 ELO</div>
+          <div class="profile-tier" id="fp-tier">Unranked · 1000 ELO</div>
         </div>
       </div>
-      <div class="section-title">Head-to-Head</div>
+      <div class="section-title">Stats</div>
       <div class="profile-stats">
-        <div class="pstat"><div class="pstat-label">Wins vs You</div><div class="pstat-val" id="pp-wins">0</div></div>
-        <div class="pstat"><div class="pstat-label">Their Win Rate</div><div class="pstat-val" id="pp-winrate">—</div></div>
-        <div class="pstat"><div class="pstat-label">Net ELO Impact</div><div class="pstat-val" id="pp-elo-impact">0</div></div>
-        <div class="pstat"><div class="pstat-label">Best Streak vs You</div><div class="pstat-val" id="pp-streak">0</div></div>
-        <div class="pstat"><div class="pstat-label">Tourney Meetings</div><div class="pstat-val" id="pp-tourney-met">0</div></div>
-        <div class="pstat"><div class="pstat-label">Total Games</div><div class="pstat-val" id="pp-games">0</div></div>
+        <div class="pstat"><div class="pstat-label">Total Wins</div><div class="pstat-val" id="fp-wins">0</div></div>
+        <div class="pstat"><div class="pstat-label">Win Rate</div><div class="pstat-val" id="fp-winrate">—</div></div>
+        <div class="pstat"><div class="pstat-label">Tokens Earned</div><div class="pstat-val" id="fp-earned">0</div></div>
+        <div class="pstat"><div class="pstat-label">Best PvP Streak</div><div class="pstat-val" id="fp-streak">0</div></div>
+        <div class="pstat"><div class="pstat-label">Tourneys Won</div><div class="pstat-val" id="fp-trophies">0</div></div>
+        <div class="pstat"><div class="pstat-label">Total Games</div><div class="pstat-val" id="fp-games">0</div></div>
       </div>
-      <div class="section-title" style="margin-top:6px">Matches Against You</div>
-      <div id="pp-history" class="history-list"></div>
-      <button id="pp-friend-btn" onclick="addFriendFromPlayerView()" style="margin-top:8px;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:11px;cursor:pointer;font-size:13px;font-weight:600">Add Friend</button>
+      <div class="section-title" style="margin-top:6px">Owned Emojis (<span id="fp-collection-count">0</span>)</div>
+      <div id="fp-collection" class="shop-grid"></div>
+      <button id="fp-remove-btn" style="margin-top:8px;background:none;border:1px solid var(--danger);color:var(--danger);border-radius:10px;padding:11px;cursor:pointer;font-size:13px;font-weight:600">Remove Friend</button>
+    </div>
+  </div>
+</div>
+
+<!-- HISTORY PLAYER PROFILE WINDOW (modal opened from history list) -->
+<div class="modal-overlay" id="history-player-modal">
+  <div class="modal" style="max-width:340px">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center">
+      <div style="width:88px;height:88px;border-radius:50%;background:var(--surface2);border:3px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:50px" id="hpm-avatar">🤖</div>
+      <h3 id="hpm-name" style="margin:0">Opponent</h3>
+      <div id="hpm-tier" style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;font-weight:700"></div>
+    </div>
+    <div class="section-title" style="margin-top:14px;margin-bottom:8px">Head-to-Head</div>
+    <div class="profile-stats" id="hpm-stats"></div>
+    <div id="hpm-last" style="margin-top:12px;font-size:11px;color:var(--muted);text-align:center;line-height:1.5"></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" style="flex:1" onclick="closeHistoryPlayerModal()">Close</button>
+      <button class="btn-confirm" id="hpm-add-btn" style="flex:1" onclick="addFriendFromHistoryModal()">Add Friend</button>
     </div>
   </div>
 </div>
