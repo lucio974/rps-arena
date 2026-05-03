@@ -137,6 +137,26 @@
 
   .round-info{text-align:center;font-size:12px;color:var(--muted);font-weight:500}
   .choices-row{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center}
+
+  .pick-dist{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+  .pick-dist-row{display:flex;align-items:center;gap:12px}
+  .pick-dist-icon{font-size:22px;width:30px;text-align:center;flex-shrink:0;line-height:1}
+  .pick-dist-bar{flex:1;height:10px;background:var(--surface3);border-radius:5px;overflow:hidden;position:relative}
+  .pick-dist-fill{height:100%;border-radius:5px;transition:width .5s cubic-bezier(.34,1.56,.64,1)}
+  .pick-dist-row[data-pick="rock"] .pick-dist-fill{background:linear-gradient(90deg,#cd7f32,#e2925c)}
+  .pick-dist-row[data-pick="paper"] .pick-dist-fill{background:linear-gradient(90deg,#7fbab0,#9ddffa)}
+  .pick-dist-row[data-pick="scissors"] .pick-dist-fill{background:linear-gradient(90deg,var(--gold),var(--gold-light))}
+  .pick-dist-num{display:flex;align-items:baseline;gap:6px;min-width:64px;justify-content:flex-end;font-family:'Bebas Neue',sans-serif;font-size:18px;font-weight:700;color:var(--gold);flex-shrink:0}
+  .pd-pct{font-family:'DM Sans',sans-serif;font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.04em}
+  .pick-history{display:flex;flex-direction:column;gap:6px;padding:6px 0}
+  .pick-history:empty{display:none}
+  .pick-row{display:flex;align-items:center;gap:8px}
+  .pick-row-label{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);min-width:40px;text-align:right;flex-shrink:0}
+  .pick-row-cells{display:flex;gap:4px;flex-wrap:wrap;flex:1}
+  .pick-cell{width:24px;height:24px;border-radius:6px;background:var(--surface2);border:1.5px solid var(--border);display:inline-flex;align-items:center;justify-content:center;font-size:14px;line-height:1}
+  .pick-cell.win{border-color:var(--success);background:rgba(59,154,90,.1)}
+  .pick-cell.lose{border-color:var(--danger);background:rgba(226,75,74,.08)}
+  .pick-cell.draw{border-color:var(--accent);background:rgba(79,142,247,.08)}
   .choice-display{background:var(--surface);border:1px solid var(--border);border-radius:14px;
     padding:24px 12px;text-align:center;font-size:48px;min-height:100px;
     display:flex;align-items:center;justify-content:center;transition:.2s}
@@ -183,6 +203,16 @@
   .result-actions button:active{transform:scale(.96)}
 
   .tourney-list{display:flex;flex-direction:column;gap:10px}
+
+  .host-tourney-btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:7px 12px;cursor:pointer;font-size:12px;font-weight:700;letter-spacing:.04em;-webkit-user-select:none;flex-shrink:0}
+  .host-tourney-btn:active{transform:scale(.96);opacity:.85}
+  .host-bo-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px}
+  .host-bo-opt{background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:12px 8px;text-align:center;cursor:pointer;transition:.15s;-webkit-user-select:none}
+  .host-bo-opt:active{transform:scale(.97)}
+  .host-bo-opt.selected{border-color:var(--accent);background:rgba(79,142,247,.1)}
+  .host-bo-opt-bo{font-family:'Bebas Neue',sans-serif;font-size:18px;font-weight:700;line-height:1;letter-spacing:.04em}
+  .host-bo-opt-prize{font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--gold);font-weight:700;margin-top:4px}
+  .host-bo-opt-entry{font-size:10px;color:var(--muted);margin-top:1px}
   .tourney-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;
     padding:14px;display:flex;align-items:center;justify-content:space-between;gap:12px}
   .tourney-card.active-tourney{border-color:var(--gold)}
@@ -266,6 +296,15 @@
 
   .profile-hero{background:var(--surface);border:1px solid var(--border);border-radius:16px;
     padding:24px 20px;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center}
+
+  /* Compact hero used by friend profile (smaller avatar + name area) */
+  .fp-hero{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:14px 16px;display:flex;align-items:center;gap:14px}
+  .fp-big-avatar{width:64px;height:64px;border-radius:50%;background:var(--surface2);border:2.5px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:36px;flex-shrink:0}
+  .fp-meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+  .fp-name-row{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;font-weight:700;line-height:1}
+  .fp-meta .profile-tier{margin-top:0}
+  .fp-meta .friend-status{align-self:flex-start;margin-top:2px}
   .big-avatar{width:110px;height:110px;border-radius:50%;background:var(--surface2);
     border:3px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:64px;position:relative;cursor:pointer}
   .big-avatar:active{transform:scale(.97)}
@@ -365,6 +404,27 @@
   .tier-badge.you{background:var(--gold);color:#000}
   .tier-badge.peak{background:rgba(169,107,255,.2);color:var(--epic);border:1px solid var(--epic)}
 
+  /* LEADERBOARD */
+  .leaderboard-link{background:rgba(201,168,76,.12);border:1px solid var(--gold);color:var(--gold);
+    border-radius:8px;padding:7px 12px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.04em;-webkit-user-select:none;flex-shrink:0}
+  .leaderboard-link:active{background:var(--gold);color:#000;transform:scale(.97)}
+  .lb-header{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center}
+  .lb-header-rank{font-family:'Bebas Neue',sans-serif;font-size:36px;color:var(--gold);font-weight:700;line-height:1}
+  .lb-header-label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-top:4px}
+  .lb-list{display:flex;flex-direction:column;gap:6px}
+  .lb-row{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:.15s}
+  .lb-row.you{border-color:var(--gold);background:rgba(201,168,76,.08)}
+  .lb-row:active{transform:scale(.99);border-color:var(--gold)}
+  .lb-rank{font-family:'Bebas Neue',sans-serif;font-size:20px;font-weight:700;color:var(--gold);min-width:34px;text-align:center;line-height:1}
+  .lb-rank.r1{color:#ffd700}
+  .lb-rank.r2{color:#c0c0c0}
+  .lb-rank.r3{color:#cd7f32}
+  .lb-avatar{width:32px;height:32px;border-radius:50%;background:var(--surface2);border:1.5px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+  .lb-info{flex:1;min-width:0}
+  .lb-name{font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lb-tier{font-size:10px;letter-spacing:.05em;font-weight:600;margin-top:1px}
+  .lb-elo{font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--gold);font-weight:700;flex-shrink:0}
+
   /* FRIENDS */
   .add-friend-row{display:flex;gap:8px;margin-bottom:6px}
   .add-friend-row .name-input{flex:1}
@@ -398,10 +458,11 @@
   .hpm-name{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:.04em;font-weight:700;line-height:1.1}
   .hpm-tier{font-size:10px;letter-spacing:.1em;text-transform:uppercase;font-weight:700}
   .hpm-section-title{font-size:10px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;font-weight:600;margin-top:12px;margin-bottom:6px}
-  .hpm-stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
-  .hpm-stats .pstat{padding:8px 8px;border-radius:8px}
-  .hpm-stats .pstat-label{font-size:8px;letter-spacing:.05em}
-  .hpm-stats .pstat-val{font-size:18px;margin-top:1px}
+  /* Stats grid mirrors the Profile-tab layout (.profile-stats 2-col) at modal scale */
+  .hpm-modal .profile-stats{gap:6px}
+  .hpm-modal .profile-stats .pstat{padding:9px 10px;border-radius:8px}
+  .hpm-modal .profile-stats .pstat-label{font-size:9px;letter-spacing:.06em}
+  .hpm-modal .profile-stats .pstat-val{font-size:20px;margin-top:1px}
   .hpm-last{margin-top:8px;font-size:10px;color:var(--muted);text-align:center;line-height:1.4}
   .hpm-btns{display:flex;gap:8px;margin-top:12px}
   .hpm-btn{flex:1;padding:9px 10px;font-size:12px;border-radius:8px;cursor:pointer;font-weight:600;font-family:inherit}
@@ -486,8 +547,8 @@
         <div class="pvp-info">
           <div class="pvp-info-left">
             <div class="pvp-info-label">Prize</div>
-            <div class="pvp-info-prize" id="pvp-prize-display">▣ 3</div>
-            <div class="pvp-info-entry" id="pvp-entry-display">Entry: 1 token</div>
+            <div class="pvp-info-prize" id="pvp-prize-display">▣ 4</div>
+            <div class="pvp-info-entry" id="pvp-entry-display">Entry: 1 token · Best of 5</div>
           </div>
           <div class="pvp-info-right">
             <div class="pvp-info-label" style="margin-bottom:4px">ELO Change</div>
@@ -508,7 +569,8 @@
       <div class="tourney-inline" id="lobby-tourney" style="display:none">
         <div class="back-bar">
           <button onclick="hideLobbySections()">← Back</button>
-          <div style="font-weight:700">Open Tournaments</div>
+          <div style="font-weight:700;flex:1">Open Tournaments</div>
+          <button class="host-tourney-btn" onclick="openHostTourneyModal()">+ Host</button>
         </div>
         <div class="tourney-list" id="tourney-list"></div>
       </div>
@@ -577,6 +639,7 @@
         <div class="choice-result" id="round-result"></div>
         <div class="choice-display" id="choice-opp">?</div>
       </div>
+      <div class="pick-history" id="pick-history"></div>
       <div class="rps-btns">
         <button class="rps-btn" id="btn-rock" onclick="play('rock')">✊<span class="rps-label">Rock</span></button>
         <button class="rps-btn" id="btn-paper" onclick="play('paper')">🖐<span class="rps-label">Paper</span></button>
@@ -647,6 +710,24 @@
         <div class="pstat"><div class="pstat-label">Tourneys Won</div><div class="pstat-val" id="ps-trophies">0</div></div>
         <div class="pstat"><div class="pstat-label">Total Games</div><div class="pstat-val" id="ps-games">0</div></div>
       </div>
+      <div class="section-title" style="margin-top:6px">Pick Distribution</div>
+      <div class="pick-dist" id="pick-dist">
+        <div class="pick-dist-row" data-pick="rock">
+          <div class="pick-dist-icon">✊</div>
+          <div class="pick-dist-bar"><div class="pick-dist-fill" id="pd-fill-rock" style="width:0%"></div></div>
+          <div class="pick-dist-num"><span id="pd-num-rock">0</span><span class="pd-pct" id="pd-pct-rock">0%</span></div>
+        </div>
+        <div class="pick-dist-row" data-pick="paper">
+          <div class="pick-dist-icon">🖐</div>
+          <div class="pick-dist-bar"><div class="pick-dist-fill" id="pd-fill-paper" style="width:0%"></div></div>
+          <div class="pick-dist-num"><span id="pd-num-paper">0</span><span class="pd-pct" id="pd-pct-paper">0%</span></div>
+        </div>
+        <div class="pick-dist-row" data-pick="scissors">
+          <div class="pick-dist-icon">✌️</div>
+          <div class="pick-dist-bar"><div class="pick-dist-fill" id="pd-fill-scissors" style="width:0%"></div></div>
+          <div class="pick-dist-num"><span id="pd-num-scissors">0</span><span class="pd-pct" id="pd-pct-scissors">0%</span></div>
+        </div>
+      </div>
       <div class="section-title" style="margin-top:6px">Owned Emojis (<span id="ps-collection-count">0</span>)</div>
       <div id="ps-collection"></div>
       <button id="reset-btn" onclick="confirmReset()" style="margin-top:8px;background:none;border:1px solid var(--danger);color:var(--danger);border-radius:10px;padding:11px;cursor:pointer;font-size:13px;font-weight:600">Reset all progress (one-time)</button>
@@ -664,10 +745,21 @@
     <div class="view" id="view-tiers">
       <div class="back-bar">
         <button onclick="showView('lobby')">← Back</button>
-        <div style="font-weight:700">ELO Tier List</div>
+        <div style="font-weight:700;flex:1">ELO Tier List</div>
+        <button class="leaderboard-link" onclick="showView('leaderboard');renderLeaderboard()">Leaderboard →</button>
       </div>
       <div class="tiers-summary" id="tiers-summary"></div>
       <div class="tiers-list" id="tiers-list"></div>
+    </div>
+
+    <!-- LEADERBOARD -->
+    <div class="view" id="view-leaderboard">
+      <div class="back-bar">
+        <button onclick="showView('tiers');renderTiers()">← Back to Tiers</button>
+        <div style="font-weight:700">Leaderboard</div>
+      </div>
+      <div class="lb-header" id="lb-header"></div>
+      <div class="lb-list" id="lb-list"></div>
     </div>
 
     <!-- FRIENDS -->
@@ -689,15 +781,15 @@
         <button onclick="showView('friends');renderFriends()">← Back to Friends</button>
         <div style="font-weight:700">Friend Profile</div>
       </div>
-      <div class="profile-hero">
-        <div class="big-avatar" style="cursor:default">
-          <span id="fp-avatar">🤖</span>
-        </div>
-        <div>
-          <div class="profile-name-row">
-            <span id="fp-name">Friend</span>
-          </div>
+      <div class="fp-hero">
+        <div class="fp-big-avatar"><span id="fp-avatar">🤖</span></div>
+        <div class="fp-meta">
+          <div class="fp-name-row"><span id="fp-name">Friend</span></div>
           <div class="profile-tier" id="fp-tier">Unranked · 1000 ELO</div>
+          <div class="friend-status" id="fp-status">
+            <span class="friend-status-dot"></span>
+            <span class="friend-status-label" id="fp-status-label">Offline</span>
+          </div>
         </div>
       </div>
       <div class="section-title">Stats</div>
@@ -725,7 +817,7 @@
       <div class="hpm-tier" id="hpm-tier"></div>
     </div>
     <div class="hpm-section-title">Stats</div>
-    <div class="hpm-stats" id="hpm-stats"></div>
+    <div class="profile-stats" id="hpm-stats"></div>
     <div id="hpm-last" class="hpm-last"></div>
     <div class="hpm-btns">
       <button class="btn-cancel hpm-btn" onclick="closeHistoryPlayerModal()">Close</button>
@@ -808,6 +900,22 @@
     <div class="modal-btns">
       <button class="btn-cancel" onclick="document.getElementById('name-modal').classList.remove('open')">Cancel</button>
       <button class="btn-confirm" onclick="saveName()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- HOST TOURNAMENT MODAL -->
+<div class="modal-overlay" id="host-tourney-modal">
+  <div class="modal">
+    <h3>Host Tournament</h3>
+    <div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px">
+      Pick the round format. 8-player single elimination. Higher rounds → bigger prize pool.
+    </div>
+    <div class="host-bo-grid" id="host-bo-grid"></div>
+    <div style="font-size:11px;color:var(--muted);margin-top:10px;text-align:center">Entry deducted on host. Bracket created instantly.</div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeHostTourneyModal()">Cancel</button>
+      <button class="btn-confirm" id="host-tourney-confirm" onclick="hostTournamentConfirm()">Host (▣ —)</button>
     </div>
   </div>
 </div>

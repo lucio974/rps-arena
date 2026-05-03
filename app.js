@@ -15,7 +15,7 @@ const PVP_NAMES = ['Shadow_X','GrindKing','Nova_88','PixelWarrior','ThunderPaw',
 const ROCK_EMOJI = '🪨';
 
 // Single PvP tier - one match option
-const PVP_TIER = { label:'Ranked', entry:1, oppElo:1100, prize:3 };
+const PVP_TIER = { label:'Ranked', entry:1, oppElo:1100, prize:4, bo:5 };
 
 const ELO_TIERS = [
   { name:'Bronze',      min:0,    max:1000, color:'#cd7f32' },
@@ -42,6 +42,9 @@ const DEFAULT_STATE = {
   earned: 0,      // tokens earned net
   bestStreak: 0,        // now: longest consecutive PvP-win streak
   currentPvpStreak: 0,  // current consecutive PvP wins
+  pickRock: 0,
+  pickPaper: 0,
+  pickScissors: 0,
   tourneysWon: 0,
   history: [],
   tournaments: null,
@@ -263,7 +266,7 @@ function renderPvpInfo() {
   const eloUp = calculateEloChange(state.elo, t.oppElo, true, false);
   const eloDown = calculateEloChange(state.elo, t.oppElo, false, false);
   document.getElementById('pvp-prize-display').textContent = '▣ ' + t.prize;
-  document.getElementById('pvp-entry-display').textContent = `Entry: ${t.entry} token${t.entry>1?'s':''}`;
+  document.getElementById('pvp-entry-display').textContent = `Entry: ${t.entry} token${t.entry>1?'s':''} · Best of ${t.bo}`;
   document.getElementById('pvp-elo-up').textContent = '+' + eloUp;
   document.getElementById('pvp-elo-down').textContent = eloDown;
 }
@@ -285,7 +288,7 @@ function startFindMatch() {
     // For PvP, randomize opponent ELO near the player's rating to feel like real matchmaking
     const oppElo = randomOppEloNear(state.elo);
     const oppEmoji = randomBotEmoji();
-    startGame('pvp', tier.entry, tier.prize, botName(), oppEmoji, 3, oppElo);
+    startGame('pvp', tier.entry, tier.prize, botName(), oppEmoji, tier.bo, oppElo);
   }, Math.random() * 2000 + 1200);
 }
 
@@ -299,7 +302,10 @@ function cancelSearch() {
 
 function startGame(mode, entry, prize, oppN, oppAvatar='🤖', bo=3, oppElo=1000) {
   runtime.currentMode = mode;
-  runtime.gameState = { entry, prize, opp: oppN, oppAvatar, scoreYou: 0, scoreOpp: 0, round: 1, bo, done: false, oppElo };
+  runtime.gameState = { entry, prize, opp: oppN, oppAvatar, scoreYou: 0, scoreOpp: 0, round: 1, bo, done: false, oppElo, youPicks: [], oppPicks: [], outcomes: [] };
+  // Clear pick-history widget
+  const ph = document.getElementById('pick-history');
+  if (ph) ph.innerHTML = '';
   document.getElementById('opp-name').textContent = oppN;
   document.getElementById('opp-avatar').textContent = oppAvatar;
   document.getElementById('you-avatar').textContent = state.avatar;
@@ -352,6 +358,16 @@ function play(choice) {
   ['btn-rock','btn-paper','btn-scissors'].forEach(id => document.getElementById(id).disabled = true);
   const emojis = { rock: '✊', paper: '🖐', scissors: '✌️' };
   const oppChoice = rps();
+
+  // Track picks for this match (visual history) and globally (profile stats)
+  if (!g.youPicks) g.youPicks = [];
+  if (!g.oppPicks) g.oppPicks = [];
+  g.youPicks.push(choice);
+  g.oppPicks.push(oppChoice);
+  if (choice === 'rock')     state.pickRock = (state.pickRock || 0) + 1;
+  if (choice === 'paper')    state.pickPaper = (state.pickPaper || 0) + 1;
+  if (choice === 'scissors') state.pickScissors = (state.pickScissors || 0) + 1;
+
   const youEl = document.getElementById('choice-you');
   const oppEl = document.getElementById('choice-opp');
   youEl.textContent = emojis[choice];
@@ -362,11 +378,15 @@ function play(choice) {
     oppEl.textContent = emojis[oppChoice];
     oppEl.classList.add('reveal');
     const rr = document.getElementById('round-result');
-    if (choice === oppChoice) { rr.textContent = 'DRAW'; rr.className = 'choice-result draw'; }
-    else if (beats(choice, oppChoice)) { g.scoreYou++; rr.textContent = 'WIN'; rr.className = 'choice-result win'; if(navigator.vibrate)navigator.vibrate([20,30,20]); }
-    else { g.scoreOpp++; rr.textContent = 'LOSE'; rr.className = 'choice-result lose'; if(navigator.vibrate)navigator.vibrate(40); }
+    let outcome; // 'W' | 'L' | 'D'
+    if (choice === oppChoice) { rr.textContent = 'DRAW'; rr.className = 'choice-result draw'; outcome = 'D'; }
+    else if (beats(choice, oppChoice)) { g.scoreYou++; rr.textContent = 'WIN'; rr.className = 'choice-result win'; outcome = 'W'; if(navigator.vibrate)navigator.vibrate([20,30,20]); }
+    else { g.scoreOpp++; rr.textContent = 'LOSE'; rr.className = 'choice-result lose'; outcome = 'L'; if(navigator.vibrate)navigator.vibrate(40); }
+    if (!g.outcomes) g.outcomes = [];
+    g.outcomes.push(outcome);
     document.getElementById('score-you').textContent = g.scoreYou;
     document.getElementById('score-opp').textContent = g.scoreOpp;
+    renderPickHistory(g);
     const winThreshold = Math.ceil(g.bo / 2);
     const over = g.scoreYou >= winThreshold || g.scoreOpp >= winThreshold || g.round >= g.bo;
     if (over) {
@@ -382,6 +402,33 @@ function play(choice) {
       }, 850);
     }
   }, 450);
+}
+
+// Render a small row showing past picks for this match (per side, dimmed by outcome).
+function renderPickHistory(g) {
+  const wrap = document.getElementById('pick-history');
+  if (!wrap) return;
+  const emojis = { rock: '✊', paper: '🖐', scissors: '✌️' };
+  const youPicks = g.youPicks || [];
+  const oppPicks = g.oppPicks || [];
+  const outcomes = g.outcomes || [];
+  // outcomes[i] is YOUR result in round i (W/L/D). For your row, color by outcome;
+  // for opponent row, flip (your W = their L).
+  const you = youPicks.map((p, i) => {
+    const o = outcomes[i] || '';
+    const cls = o === 'W' ? 'win' : o === 'L' ? 'lose' : o === 'D' ? 'draw' : '';
+    return `<span class="pick-cell ${cls}" title="Round ${i+1}">${emojis[p] || '?'}</span>`;
+  }).join('');
+  const opp = oppPicks.map((p, i) => {
+    const o = outcomes[i] || '';
+    const flipped = o === 'W' ? 'L' : o === 'L' ? 'W' : o;
+    const cls = flipped === 'W' ? 'win' : flipped === 'L' ? 'lose' : flipped === 'D' ? 'draw' : '';
+    return `<span class="pick-cell ${cls}" title="Round ${i+1}">${emojis[p] || '?'}</span>`;
+  }).join('');
+  wrap.innerHTML = `
+    <div class="pick-row" aria-label="Your past picks"><span class="pick-row-label">You</span><div class="pick-row-cells">${you}</div></div>
+    <div class="pick-row" aria-label="Opponent past picks"><span class="pick-row-label">${(g.opp || 'Opp').slice(0,10)}</span><div class="pick-row-cells">${opp}</div></div>
+  `;
 }
 
 function calculateEloChange(playerElo, oppElo, won, draw) {
@@ -433,11 +480,17 @@ function endGame(g) {
       // Consecutive PvP win streak
       state.currentPvpStreak = (state.currentPvpStreak || 0) + 1;
       if (state.currentPvpStreak > (state.bestStreak || 0)) state.bestStreak = state.currentPvpStreak;
-      delta = g.prize;
-      state.balance += g.prize; state.earned += g.prize;
+      // Streak bonus: +1 token per win in the current streak (capped at +10 to keep economy sane).
+      // First win = +1, second consecutive = +2, etc.
+      const streakBonus = Math.min(state.currentPvpStreak, 10);
+      const totalPrize = g.prize + streakBonus;
+      delta = totalPrize;
+      state.balance += totalPrize; state.earned += totalPrize;
       type = 'win';
       title = 'YOU WIN!';
-      detail = `+${g.prize} tokens added to wallet`;
+      detail = streakBonus > 0
+        ? `+${g.prize} prize + ${streakBonus} streak bonus = +${totalPrize} tokens`
+        : `+${g.prize} tokens added to wallet`;
       if (navigator.vibrate) navigator.vibrate([30, 50, 30, 50, 30]);
     } else if (draw) {
       state.draws = (state.draws || 0) + 1;
@@ -681,11 +734,11 @@ function leaveGame() {
 
 /* ---- TOURNAMENTS ---- */
 const TOURNEY_TEMPLATES = [
-  { name: 'Mystery Emoji Cup', entry: 10, prize: 0, slots: 4, special: 'emoji' },
-  { name: 'Beginner Bash',  entry: 1,  prize: 6,  slots: 7, special: false },
-  { name: 'Weekend Brawl',  entry: 2,  prize: 12, slots: 5, special: false },
-  { name: 'Coin Clashers',  entry: 3,  prize: 20, slots: 6, special: false },
-  { name: 'Elite Cup',      entry: 5,  prize: 35, slots: 3, special: false },
+  { name: 'Mystery Emoji Cup', entry: 10, prize: 0, slots: 4, special: 'emoji', bo: 3 },
+  { name: 'Beginner Bash',  entry: 1,  prize: 6,  slots: 7, special: false, bo: 3 },
+  { name: 'Weekend Brawl',  entry: 2,  prize: 12, slots: 5, special: false, bo: 3 },
+  { name: 'Coin Clashers',  entry: 3,  prize: 20, slots: 6, special: false, bo: 3 },
+  { name: 'Elite Cup',      entry: 5,  prize: 35, slots: 3, special: false, bo: 3 },
 ];
 
 function initTourneys() {
@@ -695,12 +748,15 @@ function initTourneys() {
     }));
     saveState();
   } else {
-    // Migrate: re-order existing tournaments to match TOURNEY_TEMPLATES.
-    // Preserve per-tourney user state (joined, bracket, complete, slots) by name match;
-    // any new templates not present get added; ids are reassigned to new positions.
+    // Migrate: re-order template tournaments to match TOURNEY_TEMPLATES while preserving
+    // user state by name. Hosted (user-created) tournaments are kept as-is and appended.
     const byName = {};
-    for (const t of state.tournaments) byName[t.name] = t;
-    state.tournaments = TOURNEY_TEMPLATES.map((tpl, i) => {
+    const hosted = [];
+    for (const t of state.tournaments) {
+      if (t.hosted) hosted.push(t);
+      else byName[t.name] = t;
+    }
+    const migrated = TOURNEY_TEMPLATES.map((tpl, i) => {
       const existing = byName[tpl.name];
       if (existing) {
         return {
@@ -714,8 +770,85 @@ function initTourneys() {
       }
       return { ...tpl, id: i, joined: false, bracket: null, complete: false };
     });
+    // Append hosted; ids match array index for compatibility with state.tournaments[id] lookups
+    state.tournaments = migrated.concat(hosted);
+    state.tournaments.forEach((t, i) => { t.id = i; });
     saveState();
   }
+}
+
+/* ---- HOST TOURNAMENT (user-created bracket) ---- */
+// Round options. Entry = round count tokens; prize = entry * 8 (full pool refund-style economy).
+const HOST_BO_OPTIONS = [
+  { bo: 3, label: 'Best of 3' },
+  { bo: 5, label: 'Best of 5' },
+  { bo: 7, label: 'Best of 7' },
+];
+let _hostBoSelected = 3; // remembered between modal opens
+
+function openHostTourneyModal() {
+  _hostBoSelected = 3;
+  renderHostBoGrid();
+  document.getElementById('host-tourney-modal').classList.add('open');
+}
+function closeHostTourneyModal() {
+  document.getElementById('host-tourney-modal').classList.remove('open');
+}
+function renderHostBoGrid() {
+  const grid = document.getElementById('host-bo-grid');
+  grid.innerHTML = HOST_BO_OPTIONS.map(opt => {
+    const entry = opt.bo;
+    const prize = opt.bo * 8;
+    const sel = opt.bo === _hostBoSelected ? 'selected' : '';
+    return `
+      <div class="host-bo-opt ${sel}" onclick="selectHostBo(${opt.bo})">
+        <div class="host-bo-opt-bo">BO${opt.bo}</div>
+        <div class="host-bo-opt-prize">▣ ${prize}</div>
+        <div class="host-bo-opt-entry">Entry: ${entry}</div>
+      </div>
+    `;
+  }).join('');
+  const sel = HOST_BO_OPTIONS.find(o => o.bo === _hostBoSelected);
+  document.getElementById('host-tourney-confirm').textContent = `Host (▣ ${sel.bo})`;
+}
+function selectHostBo(bo) {
+  _hostBoSelected = bo;
+  renderHostBoGrid();
+}
+function hostTournamentConfirm() {
+  const opt = HOST_BO_OPTIONS.find(o => o.bo === _hostBoSelected);
+  if (!opt) return;
+  const entry = opt.bo;
+  const prize = opt.bo * 8;
+  if (state.balance < entry) {
+    toast('Not enough tokens! Need ' + entry + '.');
+    return;
+  }
+  state.balance -= entry;
+  // Find a unique name for the new tournament
+  initTourneys();
+  const existingHosted = (state.tournaments || []).filter(t => t.hosted).length;
+  const t = {
+    name: 'Your Tournament #' + (existingHosted + 1),
+    entry, prize,
+    slots: 0,                        // private; you and 7 AI
+    special: false,
+    hosted: true,
+    bo: opt.bo,
+    joined: true,
+    complete: false,
+  };
+  // Build bracket and assign id
+  t.bracket = buildBracket(t);
+  state.tournaments.push(t);
+  state.tournaments.forEach((tt, i) => { tt.id = i; });
+  saveState();
+  updateBalance();
+  closeHostTourneyModal();
+  toast('Tournament hosted! Bracket ready.');
+  // Jump straight to the bracket
+  renderTourneyList();
+  setTimeout(() => showLobbyBracket(t.id), 150);
 }
 
 function renderTourneyList() {
@@ -725,17 +858,19 @@ function renderTourneyList() {
     const status = t.complete ? '<span style="font-size:10px;background:rgba(136,136,136,.2);color:var(--muted);padding:2px 6px;border-radius:3px">DONE</span>'
       : t.joined ? '<span style="font-size:10px;background:rgba(201,168,76,.2);color:var(--gold);padding:2px 6px;border-radius:3px">JOINED</span>' : '';
     const specialBadge = t.special === 'emoji' ? '<span style="font-size:10px;background:rgba(169,107,255,.2);color:var(--epic);padding:2px 6px;border-radius:3px">SPECIAL</span>' : '';
+    const hostedBadge = t.hosted ? '<span style="font-size:10px;background:rgba(79,142,247,.2);color:var(--accent);padding:2px 6px;border-radius:3px">HOSTED</span>' : '';
     const prizeDisplay = t.special === 'emoji'
       ? `<div class="tourney-prize emoji-prize">🎁</div><div class="tourney-entry">Mystery Emoji</div>`
       : `<div class="tourney-prize">🏆 ${t.prize}</div><div class="tourney-entry">Prize Pool</div>`;
-    const cardClass = 'tourney-card' + (t.joined ? ' active-tourney' : '') + (t.special ? ' special' : '');
+    const cardClass = 'tourney-card' + (t.joined ? ' active-tourney' : '') + (t.special ? ' special' : '') + (t.hosted ? ' hosted' : '');
+    const boLabel = t.bo ? 'Best of ' + t.bo : '';
     return `
       <div class="${cardClass}">
         <div class="tourney-info">
-          <div class="tourney-name">${t.name} ${specialBadge} ${status}</div>
+          <div class="tourney-name">${t.name} ${hostedBadge} ${specialBadge} ${status}</div>
           <div class="tourney-meta">
             <span>▣ ${t.entry} entry</span>
-            <span>👥 ${t.slots} spots</span>
+            <span>👥 ${t.slots} spots</span>${boLabel ? `<span>${boLabel}</span>` : ''}
             <span>8-player</span>
           </div>
         </div>
@@ -755,8 +890,9 @@ function promptJoinTourney(id) {
   const prizeText = t.special === 'emoji'
     ? `Prize: <strong style="color:var(--epic)">A random emoji you don't yet own (any rarity)</strong>`
     : `Prize pool: <strong style="color:var(--gold)">${t.prize} tokens</strong>`;
+  const fmt = `Format: 8-player single elimination, best of ${t.bo || 3}.`;
   openModal('Join ' + t.name + '?',
-    `Entry: <strong style="color:var(--gold)">${t.entry} token${t.entry>1?'s':''}</strong><br>${prizeText}<br>Format: 8-player single elimination, best of 3.`,
+    `Entry: <strong style="color:var(--gold)">${t.entry} token${t.entry>1?'s':''}</strong><br>${prizeText}<br>${fmt}`,
     () => joinTourney(id)
   );
 }
@@ -894,7 +1030,7 @@ function startTourneyMatch(tourneyId, roundIdx, matchIdx) {
   const prizeForWinner = roundIdx === 2 ? t.prize : 0;
   // Random emoji avatar for tournament opponents
   const oppEmoji = randomBotEmoji();
-  startGame('tourney', 0, prizeForWinner, opp, oppEmoji, 3);
+  startGame('tourney', 0, prizeForWinner, opp, oppEmoji, t.bo || 3);
 }
 
 function onTourneyMatchContinue(won) {
@@ -1017,7 +1153,26 @@ function renderProfile() {
   // (challenge emojis become legendary via getEmojiInfo). Group by rarity desc.
   const ownedItems = state.ownedEmojis.map(e => getEmojiInfo(e));
   document.getElementById('ps-collection-count').textContent = ownedItems.length;
-  document.getElementById('ps-collection').innerHTML = renderOwnedCollectionHtml(ownedItems);
+  document.getElementById('ps-collection').innerHTML = renderOwnedCollectionHtml(ownedItems, { interactive: true });
+
+  // Pick distribution — total picks across all matches, percent of each.
+  const pr = state.pickRock || 0;
+  const pp = state.pickPaper || 0;
+  const ps = state.pickScissors || 0;
+  const totalPicks = pr + pp + ps;
+  const pct = (n) => totalPicks > 0 ? Math.round(n / totalPicks * 100) : 0;
+  // Bar widths normalized to the most-picked sign so the leader bar fills 100%.
+  const maxPick = Math.max(pr, pp, ps, 1);
+  const barWidth = (n) => Math.round(n / maxPick * 100);
+  document.getElementById('pd-num-rock').textContent = pr;
+  document.getElementById('pd-num-paper').textContent = pp;
+  document.getElementById('pd-num-scissors').textContent = ps;
+  document.getElementById('pd-pct-rock').textContent = pct(pr) + '%';
+  document.getElementById('pd-pct-paper').textContent = pct(pp) + '%';
+  document.getElementById('pd-pct-scissors').textContent = pct(ps) + '%';
+  document.getElementById('pd-fill-rock').style.width = barWidth(pr) + '%';
+  document.getElementById('pd-fill-paper').style.width = barWidth(pp) + '%';
+  document.getElementById('pd-fill-scissors').style.width = barWidth(ps) + '%';
 
   const resetBtn = document.getElementById('reset-btn');
   if (state.hasReset) {
@@ -1140,9 +1295,8 @@ function renderFeatured() {
 }
 
 /* ---- CHALLENGE DEFINITIONS ----
-   Each challenge unlocks a specific emoji. Some emojis already exist in the
-   catalog (and stay buyable normally) but completing the challenge grants them
-   for free. */
+   Each challenge has either an emoji reward (default) or a token reward (rewardType:'tokens').
+   Emoji challenges grant the emoji once claimed; token challenges credit tokens to balance. */
 const CHALLENGE_DEFS = [
   // Rock Reborn — original challenge, dual-progress
   {
@@ -1155,33 +1309,43 @@ const CHALLENGE_DEFS = [
       { current: Math.min(state.bestStreak || 0, 10), goal: 10, label: 'PvP win streak' },
     ],
   },
+  // Token reward challenge — 5 PvP wins in a row → 100 tokens
+  {
+    id: 'streak_5_tokens',
+    emoji: '🎟️',
+    name: 'Hot Hand',
+    desc: 'Win 5 PvP matches in a row.',
+    rewardType: 'tokens',
+    rewardAmount: 100,
+    progress: () => [{ current: Math.min(state.bestStreak || 0, 5), goal: 5, label: 'PvP wins in a row' }],
+  },
   {
     id: 'win_100',
     emoji: '🗿',
     name: 'Stone Cold',
-    desc: 'Win 100 matches.',
-    progress: () => [{ current: Math.min(state.wins || 0, 100), goal: 100, label: 'matches won' }],
+    desc: 'Win 1000 matches.',
+    progress: () => [{ current: Math.min(state.wins || 0, 1000), goal: 1000, label: 'matches won' }],
   },
   {
     id: 'win_50',
     emoji: '👽',
     name: 'Out of This World',
-    desc: 'Win 50 matches.',
-    progress: () => [{ current: Math.min(state.wins || 0, 50), goal: 50, label: 'matches won' }],
+    desc: 'Win 500 matches.',
+    progress: () => [{ current: Math.min(state.wins || 0, 500), goal: 500, label: 'matches won' }],
   },
   {
     id: 'draw_30',
     emoji: '🤓',
     name: 'What a Read!',
-    desc: 'Draw 30 matches.',
-    progress: () => [{ current: Math.min(state.draws || 0, 30), goal: 30, label: 'matches drawn' }],
+    desc: 'Draw 100 matches.',
+    progress: () => [{ current: Math.min(state.draws || 0, 100), goal: 100, label: 'matches drawn' }],
   },
   {
     id: 'lose_30',
     emoji: '🥀',
     name: 'Wilted',
-    desc: 'Lose 30 matches.',
-    progress: () => [{ current: Math.min(state.losses || 0, 30), goal: 30, label: 'matches lost' }],
+    desc: 'Lose 100 matches.',
+    progress: () => [{ current: Math.min(state.losses || 0, 100), goal: 100, label: 'matches lost' }],
   },
   {
     id: 'tourney_25',
@@ -1246,20 +1410,33 @@ function isChallengeComplete(c) {
 function renderChallenges() {
   const list = document.getElementById('challenges-list');
   list.innerHTML = CHALLENGE_DEFS.map(c => {
-    const owned = state.ownedEmojis.includes(c.emoji);
+    const isTokenReward = c.rewardType === 'tokens';
     const claimed = (state.claimedChallenges || []).includes(c.id);
     const complete = isChallengeComplete(c);
-    const equipped = state.avatar === c.emoji;
 
+    // For emoji rewards, owned/equipped state drives the action. For token rewards,
+    // the only states are: locked (incomplete), claim available, or claimed.
     let action;
-    if (equipped) {
-      action = '<div class="shop-action equipped" style="margin-top:6px">EQUIPPED</div>';
-    } else if (owned) {
-      action = `<button onclick="equipEmoji('${c.emoji}')" style="margin-top:6px;background:var(--gold);color:#000;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.05em">EQUIP</button>`;
-    } else if (complete && !claimed) {
-      action = `<button onclick="claimChallenge('${c.id}')" style="margin-top:6px;background:var(--success);color:#fff;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.05em">CLAIM ${c.emoji}</button>`;
+    if (isTokenReward) {
+      if (claimed) {
+        action = `<div class="shop-action equipped" style="margin-top:6px">CLAIMED · +${c.rewardAmount} ▣</div>`;
+      } else if (complete) {
+        action = `<button onclick="claimChallenge('${c.id}')" style="margin-top:6px;background:var(--success);color:#fff;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.05em">CLAIM ▣ ${c.rewardAmount}</button>`;
+      } else {
+        action = '<div class="shop-action locked" style="margin-top:6px">LOCKED</div>';
+      }
     } else {
-      action = '<div class="shop-action locked" style="margin-top:6px">LOCKED</div>';
+      const owned = state.ownedEmojis.includes(c.emoji);
+      const equipped = state.avatar === c.emoji;
+      if (equipped) {
+        action = '<div class="shop-action equipped" style="margin-top:6px">EQUIPPED</div>';
+      } else if (owned) {
+        action = `<button onclick="equipEmoji('${c.emoji}')" style="margin-top:6px;background:var(--gold);color:#000;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.05em">EQUIP</button>`;
+      } else if (complete && !claimed) {
+        action = `<button onclick="claimChallenge('${c.id}')" style="margin-top:6px;background:var(--success);color:#fff;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.05em">CLAIM ${c.emoji}</button>`;
+      } else {
+        action = '<div class="shop-action locked" style="margin-top:6px">LOCKED</div>';
+      }
     }
 
     const progressBars = c.progress().map(p => {
@@ -1294,6 +1471,24 @@ function claimChallenge(id) {
   const c = CHALLENGE_DEFS.find(x => x.id === id);
   if (!c) return;
   if (!isChallengeComplete(c)) { toast('Challenge not complete'); return; }
+  const claimed = (state.claimedChallenges || []).includes(id);
+  if (claimed) { toast('Already claimed'); return; }
+
+  if (c.rewardType === 'tokens') {
+    state.balance += c.rewardAmount;
+    state.earned += c.rewardAmount;
+    if (!state.claimedChallenges) state.claimedChallenges = [];
+    state.claimedChallenges.push(id);
+    saveState();
+    updateBalance();
+    updateHeader();
+    renderShop();
+    toast('+' + c.rewardAmount + ' tokens — ' + c.name + ' claimed!');
+    if (navigator.vibrate) navigator.vibrate([30, 50, 30, 50, 60]);
+    return;
+  }
+
+  // Emoji reward (default)
   if (state.ownedEmojis.includes(c.emoji)) { toast('Already owned'); return; }
   state.ownedEmojis.push(c.emoji);
   state.avatar = c.emoji;
@@ -1308,10 +1503,15 @@ function claimChallenge(id) {
 
 function equipEmoji(e) {
   if (!state.ownedEmojis.includes(e)) return;
+  if (state.avatar === e) return; // already equipped — silent
   state.avatar = e;
   saveState();
   updateHeader();
-  renderShop();
+  // Refresh whichever owned-emoji view is currently visible
+  const shopActive = document.getElementById('view-shop').classList.contains('active');
+  const profileActive = document.getElementById('view-profile').classList.contains('active');
+  if (shopActive) renderShop();
+  if (profileActive) renderProfile();
   toast('Equipped');
 }
 
@@ -1333,21 +1533,29 @@ function shopItemHtml(item) {
 
 // Emojis that can ONLY be unlocked through challenges (never browsable, never featured, never random rewards)
 function getChallengeLockedEmojis() {
-  // Returns the set of emojis tied to a challenge. Includes Rock + all CHALLENGE_DEFS emojis.
+  // Returns the set of emojis tied to an EMOJI-reward challenge — these are
+  // claim-only (never browsable, never featured). Token-reward challenges use
+  // an emoji as a tile icon but the emoji isn't actually granted, so we don't
+  // lock it from the shop.
   const set = new Set([ROCK_EMOJI]);
   if (typeof CHALLENGE_DEFS !== 'undefined') {
-    for (const c of CHALLENGE_DEFS) set.add(c.emoji);
+    for (const c of CHALLENGE_DEFS) {
+      if (c.rewardType === 'tokens') continue;
+      set.add(c.emoji);
+    }
   }
   return set;
 }
 
-// Lookup table of challenge emojis -> their challenge def (for name + forced rarity)
+// Lookup table of challenge emojis -> their challenge def (for name + forced rarity).
+// Only emoji-reward challenges produce overrides; token-reward icons stay catalog-resolved.
 function getChallengeEmojiOverrides() {
   const map = {};
   for (const c of CHALLENGE_DEFS) {
+    if (c.rewardType === 'tokens') continue;
     map[c.emoji] = { e: c.emoji, name: c.name, cat: 'challenge', price: 0, rarity: 'legendary' };
   }
-  // Rock has its own challenge; if not in CHALLENGE_DEFS by emoji match, add it explicitly
+  // Rock has its own challenge; ensure it's in the map even if absent from CHALLENGE_DEFS
   if (!map[ROCK_EMOJI]) {
     map[ROCK_EMOJI] = { e: ROCK_EMOJI, name: 'Rock', cat: 'challenge', price: 0, rarity: 'legendary' };
   }
@@ -1588,6 +1796,81 @@ function renderTiers() {
   }).join('');
 }
 
+/* ---- LEADERBOARD (synthetic, local) ----
+   Builds a stable per-day leaderboard from PVP_NAMES + BOT_NAMES with synthetic
+   ELOs, then inserts the user. Order changes once a day; tapping a row opens
+   the same player profile window used elsewhere. */
+function renderLeaderboard() {
+  // Pool of 14 NPCs, deterministically picked + ranked per day.
+  const pool = [...PVP_NAMES, ...BOT_NAMES];
+  const seedBase = _hashStr('lb|' + todayKey());
+  const r = _seededRand(seedBase);
+
+  // Pick 14 unique names
+  const seen = new Set();
+  const picked = [];
+  let safety = 0;
+  while (picked.length < 14 && seen.size < pool.length && safety < 500) {
+    const idx = Math.floor(r() * pool.length);
+    if (!seen.has(idx)) {
+      seen.add(idx);
+      picked.push(pool[idx]);
+    }
+    safety++;
+  }
+
+  // Each NPC gets synthetic stats; we use their ELO from the synthetic profile.
+  const npcs = picked.map(name => {
+    // Pick a stable per-day avatar
+    const sp = getPlayerSyntheticProfile(name, '');
+    // Override avatar with a deterministic emoji pulled from the shop pool
+    const ePool = getShopPool();
+    const ai = _hashStr(name + '|av') % Math.max(1, ePool.length);
+    const avatar = ePool.length > 0 ? ePool[ai].e : '🤖';
+    return { name, avatar, elo: sp.elo };
+  });
+
+  // Insert the user
+  const me = { name: state.username, avatar: state.avatar, elo: state.elo, isYou: true };
+  const all = npcs.concat([me]);
+  // Sort by ELO descending
+  all.sort((a, b) => b.elo - a.elo);
+
+  // Find user's rank
+  const myRank = all.findIndex(x => x.isYou) + 1;
+  const total = all.length;
+
+  // Header card
+  const tier = getTier(state.elo);
+  document.getElementById('lb-header').innerHTML = `
+    <div class="lb-header-rank" style="color:${tier.color}">#${myRank} <span style="color:var(--muted);font-size:18px">/ ${total}</span></div>
+    <div class="lb-header-label">Your Rank · ${state.elo} ELO</div>
+  `;
+
+  // Rows
+  document.getElementById('lb-list').innerHTML = all.map((p, i) => {
+    const rank = i + 1;
+    const tier = getTier(p.elo);
+    const rankCls = rank === 1 ? 'r1' : rank === 2 ? 'r2' : rank === 3 ? 'r3' : '';
+    const youCls = p.isYou ? ' you' : '';
+    // For NPCs the row opens the player profile window; for "you" it opens your own profile.
+    const onclick = p.isYou
+      ? `showView('profile');renderProfile()`
+      : `openTourneyPlayerProfile('${String(p.name).replace(/'/g, "\\'")}')`;
+    return `
+      <div class="lb-row${youCls}" onclick="${onclick}">
+        <div class="lb-rank ${rankCls}">${rank}</div>
+        <div class="lb-avatar">${p.avatar}</div>
+        <div class="lb-info">
+          <div class="lb-name">${p.name}${p.isYou ? ' (you)' : ''}</div>
+          <div class="lb-tier" style="color:${tier.color}">${tier.name}</div>
+        </div>
+        <div class="lb-elo">${p.elo}</div>
+      </div>
+    `;
+  }).join('');
+}
+
 /* ---- FRIENDS LIST ---- */
 // Deterministic online status per friend per day (so it doesn't flicker mid-session
 // but does rotate). Seeded by name+avatar+date.
@@ -1669,14 +1952,14 @@ function showHistoryPlayerModal(name, avatar) {
   tierEl.textContent = `${tier.name} · ${synth.elo} ELO`;
   tierEl.style.color = tier.color;
 
-  // PERSONAL stats (their own profile), not head-to-head against the user.
+  // PERSONAL stats — same six labels as the Profile tab so layout mirrors.
   document.getElementById('hpm-stats').innerHTML = `
-    <div class="pstat"><div class="pstat-label">Wins</div><div class="pstat-val">${synth.wins}</div></div>
+    <div class="pstat"><div class="pstat-label">Total Wins</div><div class="pstat-val">${synth.wins}</div></div>
     <div class="pstat"><div class="pstat-label">Win Rate</div><div class="pstat-val">${synth.winRatePct}%</div></div>
-    <div class="pstat"><div class="pstat-label">Earned</div><div class="pstat-val">${synth.earned}</div></div>
-    <div class="pstat"><div class="pstat-label">Best Streak</div><div class="pstat-val">${synth.streak}</div></div>
-    <div class="pstat"><div class="pstat-label">Trophies</div><div class="pstat-val">${synth.trophies}</div></div>
-    <div class="pstat"><div class="pstat-label">Games</div><div class="pstat-val">${synth.games}</div></div>
+    <div class="pstat"><div class="pstat-label">Tokens Earned</div><div class="pstat-val">${synth.earned}</div></div>
+    <div class="pstat"><div class="pstat-label">Best PvP Streak</div><div class="pstat-val">${synth.streak}</div></div>
+    <div class="pstat"><div class="pstat-label">Tourneys Won</div><div class="pstat-val">${synth.trophies}</div></div>
+    <div class="pstat"><div class="pstat-label">Total Games</div><div class="pstat-val">${synth.games}</div></div>
   `;
   document.getElementById('hpm-last').innerHTML = '';
 
@@ -1801,7 +2084,9 @@ function getFriendSyntheticProfile(friend) {
 
 // Shared renderer for an "owned emojis" collection grid: groups by rarity descending,
 // dedupes by emoji key, and uses the read-only shop-item visual.
-function renderOwnedCollectionHtml(items) {
+function renderOwnedCollectionHtml(items, opts) {
+  opts = opts || {};
+  const interactive = !!opts.interactive;
   if (!items || items.length === 0) {
     return '<div class="empty-state">No emojis owned yet.</div>';
   }
@@ -1824,13 +2109,29 @@ function renderOwnedCollectionHtml(items) {
     <div class="shop-rarity-section">
       <div class="shop-rarity-header ${r}">${r.toUpperCase()} <span class="count">· ${byRarity[r].length}</span></div>
       <div class="shop-grid">
-        ${byRarity[r].map(item => `
-          <div class="shop-item" style="cursor:default">
-            <div class="shop-emoji">${item.e}</div>
-            <div class="shop-name">${item.name}</div>
-            <div class="shop-action ${item.rarity}">${item.rarity.toUpperCase()}</div>
-          </div>
-        `).join('')}
+        ${byRarity[r].map(item => {
+          if (interactive) {
+            const equipped = state.avatar === item.e;
+            const safe = String(item.e).replace(/'/g, "\\'");
+            const actionLabel = equipped ? 'EQUIPPED' : 'EQUIP';
+            const actionCls = equipped ? 'equipped' : 'owned';
+            const itemCls = 'shop-item' + (equipped ? ' equipped' : '');
+            return `
+              <div class="${itemCls}" onclick="equipEmoji('${safe}')">
+                <div class="shop-emoji">${item.e}</div>
+                <div class="shop-name">${item.name}</div>
+                <div class="shop-action ${actionCls}">${actionLabel}</div>
+              </div>
+            `;
+          }
+          return `
+            <div class="shop-item" style="cursor:default">
+              <div class="shop-emoji">${item.e}</div>
+              <div class="shop-name">${item.name}</div>
+              <div class="shop-action ${item.rarity}">${item.rarity.toUpperCase()}</div>
+            </div>
+          `;
+        }).join('')}
       </div>
     </div>
   `).join('');
@@ -1849,6 +2150,13 @@ function openFriendProfile(idx) {
   const tierEl = document.getElementById('fp-tier');
   tierEl.textContent = `${tier.name} · ${synth.elo} ELO`;
   tierEl.style.color = tier.color;
+
+  // Online/offline status — same source of truth as the friends list
+  const online = isFriendOnline(f);
+  const statusEl = document.getElementById('fp-status');
+  statusEl.classList.remove('online', 'offline');
+  statusEl.classList.add(online ? 'online' : 'offline');
+  document.getElementById('fp-status-label').textContent = online ? 'Online' : 'Offline';
 
   document.getElementById('fp-wins').textContent = synth.wins;
   document.getElementById('fp-winrate').textContent = synth.winRatePct + '%';
