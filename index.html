@@ -213,6 +213,18 @@
   .host-bo-opt-bo{font-family:'Bebas Neue',sans-serif;font-size:18px;font-weight:700;line-height:1;letter-spacing:.04em}
   .host-bo-opt-prize{font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--gold);font-weight:700;margin-top:4px}
   .host-bo-opt-entry{font-size:10px;color:var(--muted);margin-top:1px}
+  .host-invites-title{font-size:11px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;font-weight:600;margin-top:14px;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+  .host-invites-hint{font-size:10px;color:var(--gold);font-weight:500;letter-spacing:.04em;text-transform:none}
+  .host-invites{max-height:144px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:6px}
+  .host-invites-empty{font-size:11px;color:var(--muted);text-align:center;padding:14px 8px;line-height:1.4}
+  .host-invite-item{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:7px;cursor:pointer;-webkit-user-select:none;transition:.12s}
+  .host-invite-item:active{background:var(--surface3)}
+  .host-invite-item.selected{background:rgba(79,142,247,.12);border:1px solid rgba(79,142,247,.4);padding:6px 7px}
+  .host-invite-item.disabled{opacity:.4;pointer-events:none}
+  .host-invite-avatar{width:24px;height:24px;border-radius:50%;background:var(--surface3);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;border:1px solid var(--gold);box-sizing:border-box}
+  .host-invite-name{flex:1;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .host-invite-check{width:16px;height:16px;border-radius:4px;border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;color:#fff;background:transparent}
+  .host-invite-item.selected .host-invite-check{background:var(--accent);border-color:var(--accent)}
   .tourney-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;
     padding:14px;display:flex;align-items:center;justify-content:space-between;gap:12px}
   .tourney-card.active-tourney{border-color:var(--gold)}
@@ -258,7 +270,7 @@
   .hist-elo.neg{color:var(--danger)}
   .hist-elo.zero{color:var(--muted)}
   .hist-opp-row{display:flex;align-items:center;gap:0;font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .hist-opp-avatar{font-size:14px;width:24px;height:24px;border-radius:50%;background:var(--surface2);border:1.5px solid var(--gold);display:inline-flex;align-items:center;justify-content:center;margin-right:6px;flex-shrink:0;line-height:1}
+  .hist-opp-avatar{font-size:13px;width:28px;height:28px;border-radius:50%;background:var(--surface2);border:1px solid var(--gold);display:inline-flex;align-items:center;justify-content:center;margin-right:8px;flex-shrink:0;line-height:1;box-sizing:border-box}
 
   .buy-btn{background:var(--surface2);border:1px solid var(--gold);color:var(--gold);
     border-radius:8px;padding:6px 10px;font-size:14px;font-weight:700;cursor:pointer;-webkit-user-select:none;line-height:1}
@@ -362,8 +374,11 @@
 
   .shop-featured{background:linear-gradient(135deg,rgba(201,168,76,.1),rgba(79,142,247,.05));
     border:1px solid var(--gold);border-radius:14px;padding:14px;margin-bottom:14px}
-  .shop-featured-title{font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--gold);font-weight:700;margin-bottom:4px;letter-spacing:.05em}
-  .shop-featured-sub{font-size:11px;color:var(--muted);margin-bottom:10px}
+  .shop-featured-header{cursor:pointer;margin:-4px -4px 8px;padding:4px;border-radius:8px;transition:.12s;-webkit-user-select:none}
+  .shop-featured-header:active{background:rgba(201,168,76,.12)}
+  .shop-featured-title{font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--gold);font-weight:700;margin-bottom:2px;letter-spacing:.05em;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .shop-featured-cycle{font-size:10px;color:var(--muted);font-weight:600;letter-spacing:.06em;text-transform:none;font-family:'DM Sans',sans-serif}
+  .shop-featured-sub{font-size:11px;color:var(--muted)}
   .shop-featured-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 
   .name-input{width:100%;background:var(--surface2);border:1px solid var(--border);
@@ -439,6 +454,9 @@
   .friend-status-dot{width:8px;height:8px;border-radius:50%}
   .friend-status.online .friend-status-dot{background:var(--success);box-shadow:0 0 6px rgba(59,154,90,.6)}
   .friend-status.offline .friend-status-dot{background:var(--muted)}
+  .friend-actions{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0}
+  .friend-vs-btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;letter-spacing:.04em;cursor:pointer;-webkit-user-select:none;line-height:1}
+  .friend-vs-btn:active{transform:scale(.95);opacity:.85}
   .friend-avatar{width:36px;height:36px;border-radius:50%;background:var(--surface2);
     border:1.5px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
   .friend-info{flex:1;min-width:0}
@@ -522,7 +540,7 @@
         <div class="mode-card" onclick="showLobbySection('tourney')">
           <div class="mode-icon">🏆</div>
           <div class="mode-name">Tournaments</div>
-          <div class="mode-desc">8-player bracket. Best of 3.</div>
+          <div class="mode-desc">8-player bracket. First to 2 wins.</div>
           <div class="mode-entry">1–10 tokens</div>
         </div>
         <div class="mode-card" onclick="showView('friends');renderFriends()">
@@ -547,8 +565,8 @@
         <div class="pvp-info">
           <div class="pvp-info-left">
             <div class="pvp-info-label">Prize</div>
-            <div class="pvp-info-prize" id="pvp-prize-display">▣ 4</div>
-            <div class="pvp-info-entry" id="pvp-entry-display">Entry: 1 token · Best of 5</div>
+            <div class="pvp-info-prize" id="pvp-prize-display">▣ 3</div>
+            <div class="pvp-info-entry" id="pvp-entry-display">Entry: 1 token · First to 3 wins</div>
           </div>
           <div class="pvp-info-right">
             <div class="pvp-info-label" style="margin-bottom:4px">ELO Change</div>
@@ -630,16 +648,16 @@
           </div>
           <div class="player-elo" id="opp-elo" style="display:none">ELO <span class="num">1000</span></div>
           <div class="player-score" id="score-opp">0</div>
-          <div style="font-size:11px;color:var(--muted)" id="round-label">Best of 3</div>
+          <div style="font-size:11px;color:var(--muted)" id="round-label">First to 2 wins</div>
         </div>
       </div>
       <div class="round-info" id="round-info">Round 1 of 3 — make your pick</div>
+      <div class="pick-history" id="pick-history"></div>
       <div class="choices-row">
         <div class="choice-display" id="choice-you">?</div>
         <div class="choice-result" id="round-result"></div>
         <div class="choice-display" id="choice-opp">?</div>
       </div>
-      <div class="pick-history" id="pick-history"></div>
       <div class="rps-btns">
         <button class="rps-btn" id="btn-rock" onclick="play('rock')">✊<span class="rps-label">Rock</span></button>
         <button class="rps-btn" id="btn-paper" onclick="play('paper')">🖐<span class="rps-label">Paper</span></button>
@@ -661,8 +679,10 @@
       </div>
 
       <div class="shop-featured" id="shop-featured">
-        <div class="shop-featured-title">⭐ DAILY FEATURED</div>
-        <div class="shop-featured-sub" id="shop-featured-sub">Rotates every 6 hours</div>
+        <div class="shop-featured-header" onclick="cycleFeatured()">
+          <div class="shop-featured-title">⭐ FEATURED <span class="shop-featured-cycle">↻ tap to cycle</span></div>
+          <div class="shop-featured-sub" id="shop-featured-sub">Tap here for a new selection</div>
+        </div>
         <div class="shop-featured-grid" id="shop-featured-grid"></div>
       </div>
 
@@ -803,6 +823,7 @@
       </div>
       <div class="section-title" style="margin-top:6px">Owned Emojis (<span id="fp-collection-count">0</span>)</div>
       <div id="fp-collection"></div>
+      <button id="fp-vs-btn" style="margin-top:10px;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:12px;cursor:pointer;font-size:14px;font-weight:700;letter-spacing:.04em">⚔ Request Match (▣ 1)</button>
       <button id="fp-remove-btn" style="margin-top:8px;background:none;border:1px solid var(--danger);color:var(--danger);border-radius:10px;padding:11px;cursor:pointer;font-size:13px;font-weight:600">Remove Friend</button>
     </div>
   </div>
@@ -912,6 +933,8 @@
       Pick the round format. 8-player single elimination. Higher rounds → bigger prize pool.
     </div>
     <div class="host-bo-grid" id="host-bo-grid"></div>
+    <div class="host-invites-title">Invite Friends <span class="host-invites-hint" id="host-invites-hint">(0/7 selected)</span></div>
+    <div class="host-invites" id="host-invites"></div>
     <div style="font-size:11px;color:var(--muted);margin-top:10px;text-align:center">Entry deducted on host. Bracket created instantly.</div>
     <div class="modal-btns">
       <button class="btn-cancel" onclick="closeHostTourneyModal()">Cancel</button>

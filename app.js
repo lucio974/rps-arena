@@ -15,7 +15,7 @@ const PVP_NAMES = ['Shadow_X','GrindKing','Nova_88','PixelWarrior','ThunderPaw',
 const ROCK_EMOJI = '🪨';
 
 // Single PvP tier - one match option
-const PVP_TIER = { label:'Ranked', entry:1, oppElo:1100, prize:4, bo:5 };
+const PVP_TIER = { label:'Ranked', entry:1, oppElo:1100, prize:3, bo:5 };
 
 const ELO_TIERS = [
   { name:'Bronze',      min:0,    max:1000, color:'#cd7f32' },
@@ -139,41 +139,51 @@ function getTier(elo) {
   return ELO_TIERS[ELO_TIERS.length - 1];
 }
 
-/* FEATURED ROTATION (every 6 hours) */
+/* FEATURED ROTATION (now tap-to-cycle; initial seed only if empty) */
 function todayKey() {
   // Used for daily-token-claim and friend online-status seeding (still day-grained).
   const d = new Date();
   return d.getFullYear() + '-' + (d.getMonth()+1) + '-' + d.getDate();
 }
-function featuredBucketKey() {
-  // 4 buckets per day (00:00, 06:00, 12:00, 18:00 local time).
-  const d = new Date();
-  const slot = Math.floor(d.getHours() / 6); // 0..3
-  return d.getFullYear() + '-' + (d.getMonth()+1) + '-' + d.getDate() + '-' + slot;
-}
-function refreshFeatured() {
-  const bucket = featuredBucketKey();
-  const pool = getShopPool();
-  // Verify cached featured: bucket match AND every emoji is still in the allowed pool.
-  if (state.featuredBucket === bucket && state.featuredEmojis && state.featuredEmojis.length > 0) {
-    const allowed = new Set(pool.map(e => e.e));
-    const allValid = state.featuredEmojis.every(e => allowed.has(e));
-    if (allValid) return;
-  }
-  // Seed from the bucket key so each 6-hour window has a stable but distinct selection.
-  const seed = bucket.split('-').reduce((a,b) => a + parseInt(b), 0);
+// Pick 4 unique emojis from a pool using a custom rng function (rng() -> [0,1)).
+function _pickFeaturedFromPool(pool, rng) {
   const picks = [];
-  let s = seed;
   const seen = new Set();
-  while (picks.length < 4 && seen.size < pool.length) {
-    s = (s * 9301 + 49297) % 233280;
-    const idx = Math.floor(s / 233280 * pool.length);
+  let safety = 0;
+  while (picks.length < 4 && seen.size < pool.length && safety < 500) {
+    const idx = Math.floor(rng() * pool.length);
     if (!seen.has(idx)) { seen.add(idx); picks.push(pool[idx].e); }
+    safety++;
   }
-  state.featuredBucket = bucket;
-  state.featuredDate = bucket; // legacy; kept in sync but no longer the gate
-  state.featuredEmojis = picks;
+  return picks;
+}
+// Initial seed (and validity check). Only seeds if there's no current selection or any
+// cached emoji is now invalid (e.g. became challenge-locked). After tap-to-cycle is used,
+// the user's manual selection is preserved across renders/sessions.
+function refreshFeatured() {
+  const pool = getShopPool();
+  if (state.featuredEmojis && state.featuredEmojis.length === 4) {
+    const allowed = new Set(pool.map(e => e.e));
+    if (state.featuredEmojis.every(e => allowed.has(e))) return;
+  }
+  // Seed once from a stable per-day key
+  const seed = todayKey().split('-').reduce((a,b) => a + parseInt(b), 0);
+  let s = seed;
+  const rng = () => {
+    s = (s * 9301 + 49297) % 233280;
+    return s / 233280;
+  };
+  state.featuredEmojis = _pickFeaturedFromPool(pool, rng);
   saveState();
+}
+// Tap to cycle: replaces the current selection with 4 fresh random picks.
+function cycleFeatured() {
+  const pool = getShopPool();
+  if (pool.length === 0) return;
+  state.featuredEmojis = _pickFeaturedFromPool(pool, Math.random);
+  saveState();
+  renderFeatured();
+  if (navigator.vibrate) navigator.vibrate(10);
 }
 
 /* CHALLENGES */
@@ -266,7 +276,7 @@ function renderPvpInfo() {
   const eloUp = calculateEloChange(state.elo, t.oppElo, true, false);
   const eloDown = calculateEloChange(state.elo, t.oppElo, false, false);
   document.getElementById('pvp-prize-display').textContent = '▣ ' + t.prize;
-  document.getElementById('pvp-entry-display').textContent = `Entry: ${t.entry} token${t.entry>1?'s':''} · Best of ${t.bo}`;
+  document.getElementById('pvp-entry-display').textContent = `Entry: ${t.entry} token${t.entry>1?'s':''} · First to ${Math.ceil(t.bo / 2)} wins`;
   document.getElementById('pvp-elo-up').textContent = '+' + eloUp;
   document.getElementById('pvp-elo-down').textContent = eloDown;
 }
@@ -315,8 +325,9 @@ function startGame(mode, entry, prize, oppN, oppAvatar='🤖', bo=3, oppElo=1000
   document.getElementById('stake-label').textContent = entry > 0
     ? entry + ' token entry'
     : (mode === 'streak' ? 'Streak Run' : 'Free play');
-  document.getElementById('round-label').textContent = 'Best of ' + bo;
-  document.getElementById('round-info').textContent = 'Round 1 of ' + bo + ' — make your pick';
+  const winThreshold = Math.ceil(bo / 2);
+  document.getElementById('round-label').textContent = 'First to ' + winThreshold + ' wins';
+  document.getElementById('round-info').textContent = 'Round 1 — first to ' + winThreshold + ' wins';
   document.getElementById('choice-you').textContent = '?';
   document.getElementById('choice-opp').textContent = '?';
   document.getElementById('choice-you').classList.remove('reveal');
@@ -393,7 +404,7 @@ function play(choice) {
       setTimeout(() => endGame(g), 700);
     } else {
       g.round++;
-      document.getElementById('round-info').textContent = 'Round ' + g.round + ' of ' + g.bo + ' — make your pick';
+      document.getElementById('round-info').textContent = 'Round ' + g.round + ' — first to ' + Math.ceil(g.bo / 2) + ' wins';
       setTimeout(() => {
         youEl.textContent = '?'; youEl.classList.remove('reveal');
         oppEl.textContent = '?'; oppEl.classList.remove('reveal');
@@ -477,20 +488,14 @@ function endGame(g) {
     let title, detail, type;
     if (won) {
       state.wins++;
-      // Consecutive PvP win streak
+      // Consecutive PvP win streak (still tracked for stats and challenges, but no bonus)
       state.currentPvpStreak = (state.currentPvpStreak || 0) + 1;
       if (state.currentPvpStreak > (state.bestStreak || 0)) state.bestStreak = state.currentPvpStreak;
-      // Streak bonus: +1 token per win in the current streak (capped at +10 to keep economy sane).
-      // First win = +1, second consecutive = +2, etc.
-      const streakBonus = Math.min(state.currentPvpStreak, 10);
-      const totalPrize = g.prize + streakBonus;
-      delta = totalPrize;
-      state.balance += totalPrize; state.earned += totalPrize;
+      delta = g.prize;
+      state.balance += g.prize; state.earned += g.prize;
       type = 'win';
       title = 'YOU WIN!';
-      detail = streakBonus > 0
-        ? `+${g.prize} prize + ${streakBonus} streak bonus = +${totalPrize} tokens`
-        : `+${g.prize} tokens added to wallet`;
+      detail = `+${g.prize} tokens added to wallet`;
       if (navigator.vibrate) navigator.vibrate([30, 50, 30, 50, 30]);
     } else if (draw) {
       state.draws = (state.draws || 0) + 1;
@@ -785,10 +790,14 @@ const HOST_BO_OPTIONS = [
   { bo: 7, label: 'Best of 7' },
 ];
 let _hostBoSelected = 3; // remembered between modal opens
+let _hostInvitesSelected = []; // array of friend indices into state.friends
+const HOST_INVITE_MAX = 7; // 7 NPC slots besides you
 
 function openHostTourneyModal() {
   _hostBoSelected = 3;
+  _hostInvitesSelected = [];
   renderHostBoGrid();
+  renderHostInvites();
   document.getElementById('host-tourney-modal').classList.add('open');
 }
 function closeHostTourneyModal() {
@@ -802,7 +811,7 @@ function renderHostBoGrid() {
     const sel = opt.bo === _hostBoSelected ? 'selected' : '';
     return `
       <div class="host-bo-opt ${sel}" onclick="selectHostBo(${opt.bo})">
-        <div class="host-bo-opt-bo">BO${opt.bo}</div>
+        <div class="host-bo-opt-bo">First to ${Math.ceil(opt.bo / 2)}</div>
         <div class="host-bo-opt-prize">▣ ${prize}</div>
         <div class="host-bo-opt-entry">Entry: ${entry}</div>
       </div>
@@ -815,6 +824,44 @@ function selectHostBo(bo) {
   _hostBoSelected = bo;
   renderHostBoGrid();
 }
+function renderHostInvites() {
+  const list = document.getElementById('host-invites');
+  const hint = document.getElementById('host-invites-hint');
+  const friends = state.friends || [];
+  const selectedCount = _hostInvitesSelected.length;
+  hint.textContent = `(${selectedCount}/${HOST_INVITE_MAX} selected)`;
+  if (friends.length === 0) {
+    list.innerHTML = '<div class="host-invites-empty">No friends yet — add some from the Friends tab to invite them.</div>';
+    return;
+  }
+  const atCap = selectedCount >= HOST_INVITE_MAX;
+  list.innerHTML = friends.map((f, idx) => {
+    const isSelected = _hostInvitesSelected.includes(idx);
+    const cls = 'host-invite-item' +
+      (isSelected ? ' selected' : '') +
+      (!isSelected && atCap ? ' disabled' : '');
+    return `
+      <div class="${cls}" onclick="toggleHostInvite(${idx})">
+        <div class="host-invite-avatar">${f.avatar || '🤖'}</div>
+        <div class="host-invite-name">${f.name}</div>
+        <div class="host-invite-check">${isSelected ? '✓' : ''}</div>
+      </div>
+    `;
+  }).join('');
+}
+function toggleHostInvite(idx) {
+  const at = _hostInvitesSelected.indexOf(idx);
+  if (at >= 0) {
+    _hostInvitesSelected.splice(at, 1);
+  } else {
+    if (_hostInvitesSelected.length >= HOST_INVITE_MAX) {
+      toast('Max ' + HOST_INVITE_MAX + ' friends — uncheck one first');
+      return;
+    }
+    _hostInvitesSelected.push(idx);
+  }
+  renderHostInvites();
+}
 function hostTournamentConfirm() {
   const opt = HOST_BO_OPTIONS.find(o => o.bo === _hostBoSelected);
   if (!opt) return;
@@ -825,27 +872,37 @@ function hostTournamentConfirm() {
     return;
   }
   state.balance -= entry;
+  // Resolve invited friends to {name, avatar} pairs from current friend list
+  const invitedFriends = _hostInvitesSelected
+    .map(i => state.friends && state.friends[i])
+    .filter(Boolean)
+    .slice(0, HOST_INVITE_MAX)
+    .map(f => ({ name: f.name, avatar: f.avatar || '🤖' }));
   // Find a unique name for the new tournament
   initTourneys();
   const existingHosted = (state.tournaments || []).filter(t => t.hosted).length;
   const t = {
     name: 'Your Tournament #' + (existingHosted + 1),
     entry, prize,
-    slots: 0,                        // private; you and 7 AI
+    slots: 0,                        // private; you and 7 AI/friends
     special: false,
     hosted: true,
     bo: opt.bo,
     joined: true,
     complete: false,
+    invitedFriends, // persisted so bracket avatars resolve correctly later
   };
-  // Build bracket and assign id
+  // Build bracket (uses invitedFriends names) and assign id
   t.bracket = buildBracket(t);
   state.tournaments.push(t);
   state.tournaments.forEach((tt, i) => { tt.id = i; });
   saveState();
   updateBalance();
   closeHostTourneyModal();
-  toast('Tournament hosted! Bracket ready.');
+  const inviteMsg = invitedFriends.length > 0
+    ? ` (${invitedFriends.length} friend${invitedFriends.length > 1 ? 's' : ''} invited)`
+    : '';
+  toast('Tournament hosted!' + inviteMsg);
   // Jump straight to the bracket
   renderTourneyList();
   setTimeout(() => showLobbyBracket(t.id), 150);
@@ -863,7 +920,7 @@ function renderTourneyList() {
       ? `<div class="tourney-prize emoji-prize">🎁</div><div class="tourney-entry">Mystery Emoji</div>`
       : `<div class="tourney-prize">🏆 ${t.prize}</div><div class="tourney-entry">Prize Pool</div>`;
     const cardClass = 'tourney-card' + (t.joined ? ' active-tourney' : '') + (t.special ? ' special' : '') + (t.hosted ? ' hosted' : '');
-    const boLabel = t.bo ? 'Best of ' + t.bo : '';
+    const boLabel = t.bo ? 'First to ' + Math.ceil(t.bo / 2) + ' wins' : '';
     return `
       <div class="${cardClass}">
         <div class="tourney-info">
@@ -890,7 +947,7 @@ function promptJoinTourney(id) {
   const prizeText = t.special === 'emoji'
     ? `Prize: <strong style="color:var(--epic)">A random emoji you don't yet own (any rarity)</strong>`
     : `Prize pool: <strong style="color:var(--gold)">${t.prize} tokens</strong>`;
-  const fmt = `Format: 8-player single elimination, best of ${t.bo || 3}.`;
+  const fmt = `Format: 8-player single elimination, first to ${Math.ceil((t.bo || 3) / 2)} wins.`;
   openModal('Join ' + t.name + '?',
     `Entry: <strong style="color:var(--gold)">${t.entry} token${t.entry>1?'s':''}</strong><br>${prizeText}<br>${fmt}`,
     () => joinTourney(id)
@@ -909,12 +966,24 @@ function joinTourney(id) {
 }
 
 function buildBracket(t) {
-  const names = [...PVP_NAMES];
-  for (let i = names.length - 1; i > 0; i--) {
+  // Tournament can carry a list of invited-friend objects {name, avatar}.
+  // They fill bracket seats first; remaining seats are random PVP_NAMES filler.
+  const invited = (t.invitedFriends || []).slice(0, 7);
+  const invitedNames = invited.map(f => f.name);
+  const filler = PVP_NAMES.filter(n => !invitedNames.includes(n));
+  // Shuffle filler
+  for (let i = filler.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [names[i], names[j]] = [names[j], names[i]];
+    [filler[i], filler[j]] = [filler[j], filler[i]];
   }
-  const players = ['You', ...names.slice(0, 7)];
+  // 7 AI/friend opponents, friends first
+  const opponents = [...invitedNames, ...filler.slice(0, 7 - invitedNames.length)];
+  // Shuffle the combined opponent list so invited friends aren't always in seats 1-N
+  for (let i = opponents.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [opponents[i], opponents[j]] = [opponents[j], opponents[i]];
+  }
+  const players = ['You', ...opponents];
   const r1 = [
     { p1: players[0], p2: players[1], s1: null, s2: null, done: false },
     { p1: players[2], p2: players[3], s1: null, s2: null, done: false },
@@ -1028,8 +1097,14 @@ function startTourneyMatch(tourneyId, roundIdx, matchIdx) {
   runtime.activeTourneyMatchIdx = { roundIdx, matchIdx };
   const opp = m.p1 === 'You' ? m.p2 : m.p1;
   const prizeForWinner = roundIdx === 2 ? t.prize : 0;
-  // Random emoji avatar for tournament opponents
-  const oppEmoji = randomBotEmoji();
+  // If opp is an invited friend, use their real friend avatar; else random bot emoji.
+  let oppEmoji;
+  const inv = (t.invitedFriends || []).find(f => f.name === opp);
+  if (inv) {
+    oppEmoji = inv.avatar || '🤖';
+  } else {
+    oppEmoji = randomBotEmoji();
+  }
   startGame('tourney', 0, prizeForWinner, opp, oppEmoji, t.bo || 3);
 }
 
@@ -1897,9 +1972,12 @@ function renderFriends() {
           <div class="friend-name">${f.name}</div>
           <div class="friend-meta">Added ${f.addedAt || 'recently'}</div>
         </div>
-        <div class="friend-status ${statusClass}">
-          <span class="friend-status-dot"></span>
-          <span class="friend-status-label">${statusText}</span>
+        <div class="friend-actions">
+          <button class="friend-vs-btn" title="Request match" onclick="event.stopPropagation();requestFriendMatch(${idx})">⚔ vs</button>
+          <div class="friend-status ${statusClass}">
+            <span class="friend-status-dot"></span>
+            <span class="friend-status-label">${statusText}</span>
+          </div>
         </div>
       </div>
     `;
@@ -1988,12 +2066,26 @@ function openPlayerProfile(historyIdx) {
 // Open the same window for a tournament opponent (by name only — generate avatar deterministically).
 function openTourneyPlayerProfile(name) {
   if (!name || name === 'You' || name === 'TBD') return;
-  // Use a deterministic emoji from the shop pool seeded by name, so the same tourney
-  // opponent always renders with the same avatar in this window.
-  const pool = getShopPool();
-  const seed = _hashStr(name);
-  const idx = pool.length > 0 ? (seed % pool.length) : 0;
-  const avatar = pool.length > 0 ? pool[idx].e : '🤖';
+  let avatar = null;
+
+  // 1) If they're an invited friend in the active hosted tournament, use that avatar.
+  const activeT = state.tournaments && state.tournaments[runtime.activeTourney];
+  if (activeT && activeT.invitedFriends) {
+    const inv = activeT.invitedFriends.find(f => f.name === name);
+    if (inv) avatar = inv.avatar || null;
+  }
+  // 2) Else if they're in the user's friend list, use that avatar.
+  if (!avatar && state.friends) {
+    const f = state.friends.find(x => x.name === name);
+    if (f) avatar = f.avatar || null;
+  }
+  // 3) Else deterministic emoji from the shop pool seeded by name.
+  if (!avatar) {
+    const pool = getShopPool();
+    const seed = _hashStr(name);
+    const idx = pool.length > 0 ? (seed % pool.length) : 0;
+    avatar = pool.length > 0 ? pool[idx].e : '🤖';
+  }
   showHistoryPlayerModal(name, avatar);
 }
 
@@ -2191,7 +2283,34 @@ function openFriendProfile(idx) {
     );
   };
 
+  // Wire Request Match button — same economics as regular PvP (1 token, ranked).
+  const vsBtn = document.getElementById('fp-vs-btn');
+  vsBtn.onclick = () => {
+    requestFriendMatch(_friendProfileIdx);
+  };
+
   showView('friend-profile');
+}
+
+/* Friend match request — costs PVP_TIER.entry, plays at PVP_TIER prize, but the
+   opponent identity is locked to the chosen friend (name, avatar, ELO from synth profile). */
+function requestFriendMatch(idx) {
+  const f = state.friends && state.friends[idx];
+  if (!f) return;
+  const tier = PVP_TIER;
+  if (state.balance < tier.entry) {
+    toast('Not enough tokens! Need ' + tier.entry + '.');
+    return;
+  }
+  const synth = getPlayerSyntheticProfile(f.name, f.avatar);
+  state.balance -= tier.entry;
+  updateBalance();
+  toast('Match request sent — ' + f.name + ' accepted!');
+  if (navigator.vibrate) navigator.vibrate(15);
+  // Brief delay to feel like a real "request → accepted" handshake
+  setTimeout(() => {
+    startGame('pvp', tier.entry, tier.prize, f.name, f.avatar || '🤖', tier.bo, synth.elo);
+  }, 600);
 }
 
 function isStandalone() {
