@@ -399,7 +399,9 @@ function play(choice) {
     document.getElementById('score-opp').textContent = g.scoreOpp;
     renderPickHistory(g);
     const winThreshold = Math.ceil(g.bo / 2);
-    const over = g.scoreYou >= winThreshold || g.scoreOpp >= winThreshold || g.round >= g.bo;
+    // Match ends ONLY when one side reaches the win threshold.
+    // Draws extend the match past the original `bo` round cap if necessary.
+    const over = g.scoreYou >= winThreshold || g.scoreOpp >= winThreshold;
     if (over) {
       setTimeout(() => endGame(g), 700);
     } else {
