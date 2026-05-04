@@ -14,6 +14,10 @@ const PVP_NAMES = ['Shadow_X','GrindKing','Nova_88','PixelWarrior','ThunderPaw',
 // Challenge-locked emoji (special, removed from regular shop browse)
 const ROCK_EMOJI = '🪨';
 
+// Game-sign emojis (the things you pick during a match).
+// Independent from ROCK_EMOJI which is a collectible avatar, not a sign.
+const SIGNS = { rock: '🗿', paper: '📝', scissors: '✂️' };
+
 // Single PvP tier - one match option
 const PVP_TIER = { label:'Ranked', entry:1, oppElo:1100, prize:3, bo:5 };
 
@@ -37,6 +41,7 @@ const DEFAULT_STATE = {
   lowestElo: 1000,      // lowest ELO ever reached
   wins: 0,
   draws: 0,
+  drawRounds: 0,        // individual rounds drawn (used by What a Read challenge)
   losses: 0,
   games: 0,
   earned: 0,      // tokens earned net
@@ -51,6 +56,11 @@ const DEFAULT_STATE = {
   hasReset: false,
   lastRewardedStreak: 0,
   claimedChallenges: [], // ids of completed challenge claims (challenge emojis)
+  // Hidden challenge tracking
+  shopClicks: 0,                  // increments each time the Shop tab is opened
+  shopClicksUnlocked: false,      // 100-clicks challenge revealed (set 3s after threshold)
+  lightyearsAchieved: false,      // 10-draws-and-win achievement
+  brokenFeatureTriggered: false,  // 0.001% PvP-win RNG (lifetime once, survives reset)
   // Daily free tokens
   lastDailyClaim: null,
   // Daily featured
@@ -204,6 +214,29 @@ function showView(id) {
   const app = document.getElementById('app');
   if (id === 'game') app.classList.add('in-game');
   else app.classList.remove('in-game');
+
+  // Hidden challenge: count shop visits. Threshold 100 → flip the reveal flag
+  // after a 3-second delay (so the unlock feels uncanny, not instant).
+  if (id === 'shop') {
+    state.shopClicks = (state.shopClicks || 0) + 1;
+    if (state.shopClicks === 100 && !state.shopClicksUnlocked) {
+      // Persist the increment now; the unlock flag flips later.
+      saveState();
+      setTimeout(() => {
+        state.shopClicksUnlocked = true;
+        saveState();
+        toast('🧇 Hidden challenge unlocked: Finally Served');
+        if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
+        // Refresh challenges list if the user happens to be on the shop view
+        if (document.getElementById('view-shop').classList.contains('active')) {
+          renderShop();
+        }
+      }, 3000);
+    } else {
+      saveState();
+    }
+  }
+
   updateHeader();
 }
 
@@ -367,7 +400,7 @@ function startGame(mode, entry, prize, oppN, oppAvatar='🤖', bo=3, oppElo=1000
 function play(choice) {
   const g = runtime.gameState; if (!g || g.done) return;
   ['btn-rock','btn-paper','btn-scissors'].forEach(id => document.getElementById(id).disabled = true);
-  const emojis = { rock: '✊', paper: '🖐', scissors: '✌️' };
+  const emojis = SIGNS;
   const oppChoice = rps();
 
   // Track picks for this match (visual history) and globally (profile stats)
@@ -390,7 +423,13 @@ function play(choice) {
     oppEl.classList.add('reveal');
     const rr = document.getElementById('round-result');
     let outcome; // 'W' | 'L' | 'D'
-    if (choice === oppChoice) { rr.textContent = 'DRAW'; rr.className = 'choice-result draw'; outcome = 'D'; }
+    if (choice === oppChoice) {
+      rr.textContent = 'DRAW'; rr.className = 'choice-result draw'; outcome = 'D';
+      // Round-level draw counter (used by What a Read challenge)
+      state.drawRounds = (state.drawRounds || 0) + 1;
+      // Per-match draw count (used by Lightyears Ahead hidden achievement)
+      g.matchDraws = (g.matchDraws || 0) + 1;
+    }
     else if (beats(choice, oppChoice)) { g.scoreYou++; rr.textContent = 'WIN'; rr.className = 'choice-result win'; outcome = 'W'; if(navigator.vibrate)navigator.vibrate([20,30,20]); }
     else { g.scoreOpp++; rr.textContent = 'LOSE'; rr.className = 'choice-result lose'; outcome = 'L'; if(navigator.vibrate)navigator.vibrate(40); }
     if (!g.outcomes) g.outcomes = [];
@@ -421,7 +460,7 @@ function play(choice) {
 function renderPickHistory(g) {
   const wrap = document.getElementById('pick-history');
   if (!wrap) return;
-  const emojis = { rock: '✊', paper: '🖐', scissors: '✌️' };
+  const emojis = SIGNS;
   const youPicks = g.youPicks || [];
   const oppPicks = g.oppPicks || [];
   const outcomes = g.outcomes || [];
@@ -499,6 +538,38 @@ function endGame(g) {
       title = 'YOU WIN!';
       detail = `+${g.prize} tokens added to wallet`;
       if (navigator.vibrate) navigator.vibrate([30, 50, 30, 50, 30]);
+
+      // ── Hidden achievement: Lightyears Ahead (10+ draws in this match AND won) ──
+      if (!state.lightyearsAchieved && (g.matchDraws || 0) >= 10) {
+        state.lightyearsAchieved = true;
+        // Defer the toast slightly so it doesn't collide with the win popup
+        setTimeout(() => toast('🛸 Hidden challenge unlocked: Lightyears Ahead!'), 1200);
+      }
+
+      // ── 1% chance: random emoji you don't yet own ──
+      // Uniform sample across full shop pool; skip silently if you own everything.
+      if (Math.random() < 0.01) {
+        const pool = getShopPool();
+        const unowned = pool.filter(p => !state.ownedEmojis.includes(p.e));
+        if (unowned.length > 0) {
+          const pick = unowned[Math.floor(Math.random() * unowned.length)];
+          state.ownedEmojis.push(pick.e);
+          setTimeout(() => toast('🎁 Bonus drop: ' + pick.e + ' ' + pick.name + '!'), 1500);
+          if (navigator.vibrate) navigator.vibrate([10, 30, 10, 30, 60]);
+        }
+      }
+
+      // ── 0.001% chance: BROKEN FEATURE (lifetime once, survives reset) ──
+      if (!state.brokenFeatureTriggered && Math.random() < 0.00001) {
+        state.brokenFeatureTriggered = true;
+        state.balance -= 1000;            // negative balance allowed
+        if (!state.ownedEmojis.includes('🔖')) state.ownedEmojis.push('🔖');
+        // Secret reset re-enable (no UI announcement)
+        state.hasReset = false;
+        // Cosmic-event toast
+        setTimeout(() => toast('🔖 Broken feature ofc — -1000 tokens. RIP.'), 1800);
+        if (navigator.vibrate) navigator.vibrate([100, 80, 100, 80, 200]);
+      }
     } else if (draw) {
       state.draws = (state.draws || 0) + 1;
       // Draw doesn't break the win streak — only losses do
@@ -915,7 +986,7 @@ function renderTourneyList() {
   const el = document.getElementById('tourney-list');
   el.innerHTML = state.tournaments.map(t => {
     const status = t.complete ? '<span style="font-size:10px;background:rgba(136,136,136,.2);color:var(--muted);padding:2px 6px;border-radius:3px">DONE</span>'
-      : t.joined ? '<span style="font-size:10px;background:rgba(201,168,76,.2);color:var(--gold);padding:2px 6px;border-radius:3px">JOINED</span>' : '';
+      : t.joined ? '<span style="font-size:10px;background:rgba(157,223,250,.2);color:var(--gold);padding:2px 6px;border-radius:3px">JOINED</span>' : '';
     const specialBadge = t.special === 'emoji' ? '<span style="font-size:10px;background:rgba(169,107,255,.2);color:var(--epic);padding:2px 6px;border-radius:3px">SPECIAL</span>' : '';
     const hostedBadge = t.hosted ? '<span style="font-size:10px;background:rgba(79,142,247,.2);color:var(--accent);padding:2px 6px;border-radius:3px">HOSTED</span>' : '';
     const prizeDisplay = t.special === 'emoji'
@@ -1329,10 +1400,14 @@ function executeReset() {
   // Preserve owned emojis and current avatar across reset
   const keptEmojis = [...state.ownedEmojis];
   const keptAvatar = state.avatar;
+  // Lifetime flag: broken-feature can only ever fire once per user, even after a reset.
+  // (Otherwise users could farm resets to retry the 0.001% bookmark drop.)
+  const keptBroken = !!state.brokenFeatureTriggered;
   const fresh = { ...DEFAULT_STATE };
   fresh.hasReset = true;
   fresh.ownedEmojis = keptEmojis;
   fresh.avatar = keptAvatar;
+  fresh.brokenFeatureTriggered = keptBroken;
   state = fresh;
   saveState();
   closeResetModal();
@@ -1386,15 +1461,44 @@ const CHALLENGE_DEFS = [
       { current: Math.min(state.bestStreak || 0, 10), goal: 10, label: 'PvP win streak' },
     ],
   },
-  // Token reward challenge — 5 PvP wins in a row → 100 tokens
+  // 🧬 Built Different — 100 consecutive PvP wins (very hard, aspirational)
   {
-    id: 'streak_5_tokens',
-    emoji: '🎟️',
-    name: 'Hot Hand',
-    desc: 'Win 5 PvP matches in a row.',
-    rewardType: 'tokens',
-    rewardAmount: 100,
-    progress: () => [{ current: Math.min(state.bestStreak || 0, 5), goal: 5, label: 'PvP wins in a row' }],
+    id: 'built_different',
+    emoji: '🧬',
+    name: 'Built Different',
+    desc: 'Win 100 PvP matches in a row.',
+    progress: () => [{ current: Math.min(state.bestStreak || 0, 100), goal: 100, label: 'PvP wins in a row' }],
+  },
+  // 🧇 Finally Served — hidden, 100 shop-tab opens (delayed reveal). Grants emoji + 100 tokens.
+  {
+    id: 'shop_clicks_100',
+    emoji: '🧇',
+    name: 'Finally Served',
+    desc: 'Open the shop 100 times.',
+    bonusTokens: 100,                                 // extra tokens granted alongside the emoji
+    hidden: true,                                     // not shown in list until unlocked
+    unlockFlag: () => !!state.shopClicksUnlocked,     // becomes true 3s after threshold
+    progress: () => [{ current: Math.min(state.shopClicks || 0, 100), goal: 100, label: 'shop visits' }],
+  },
+  // 🛸 Lightyears Ahead — hidden, 10 draws in same match AND win that match
+  {
+    id: 'lightyears_ahead',
+    emoji: '🛸',
+    name: 'Lightyears Ahead',
+    desc: 'Draw 10+ times in one match and still win it.',
+    hidden: true,
+    unlockFlag: () => !!state.lightyearsAchieved,
+    progress: () => [{ current: state.lightyearsAchieved ? 1 : 0, goal: 1, label: state.lightyearsAchieved ? 'achieved' : 'not yet achieved' }],
+  },
+  // 🔖 Broken Feature ofc — hidden, triggers on 0.001% PvP win RNG
+  {
+    id: 'broken_feature',
+    emoji: '🔖',
+    name: 'Broken Feature ofc',
+    desc: 'You found the bug. Or it found you.',
+    hidden: true,
+    unlockFlag: () => !!state.brokenFeatureTriggered,
+    progress: () => [{ current: state.brokenFeatureTriggered ? 1 : 0, goal: 1, label: state.brokenFeatureTriggered ? 'glitch experienced' : '???' }],
   },
   {
     id: 'win_100',
@@ -1414,8 +1518,8 @@ const CHALLENGE_DEFS = [
     id: 'draw_30',
     emoji: '🤓',
     name: 'What a Read!',
-    desc: 'Draw 100 matches.',
-    progress: () => [{ current: Math.min(state.draws || 0, 100), goal: 100, label: 'matches drawn' }],
+    desc: 'Draw 100 rounds.',
+    progress: () => [{ current: Math.min(state.drawRounds || 0, 100), goal: 100, label: 'rounds drawn' }],
   },
   {
     id: 'lose_30',
@@ -1486,7 +1590,9 @@ function isChallengeComplete(c) {
 
 function renderChallenges() {
   const list = document.getElementById('challenges-list');
-  list.innerHTML = CHALLENGE_DEFS.map(c => {
+  // Hidden challenges only render once their unlockFlag returns true.
+  const visible = CHALLENGE_DEFS.filter(c => !c.hidden || (c.unlockFlag && c.unlockFlag()));
+  list.innerHTML = visible.map(c => {
     const isTokenReward = c.rewardType === 'tokens';
     const claimed = (state.claimedChallenges || []).includes(c.id);
     const complete = isChallengeComplete(c);
@@ -1510,7 +1616,8 @@ function renderChallenges() {
       } else if (owned) {
         action = `<button onclick="equipEmoji('${c.emoji}')" style="margin-top:6px;background:var(--gold);color:#000;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.05em">EQUIP</button>`;
       } else if (complete && !claimed) {
-        action = `<button onclick="claimChallenge('${c.id}')" style="margin-top:6px;background:var(--success);color:#fff;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.05em">CLAIM ${c.emoji}</button>`;
+        const bonusLabel = c.bonusTokens ? ' + ▣ ' + c.bonusTokens : '';
+        action = `<button onclick="claimChallenge('${c.id}')" style="margin-top:6px;background:var(--success);color:#fff;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.05em">CLAIM ${c.emoji}${bonusLabel}</button>`;
       } else {
         action = '<div class="shop-action locked" style="margin-top:6px">LOCKED</div>';
       }
@@ -1571,10 +1678,18 @@ function claimChallenge(id) {
   state.avatar = c.emoji;
   if (!state.claimedChallenges) state.claimedChallenges = [];
   if (!state.claimedChallenges.includes(id)) state.claimedChallenges.push(id);
+  // Optional bonus tokens (e.g. Finally Served gives 🧇 + 100 tokens)
+  let bonusMsg = '';
+  if (c.bonusTokens && c.bonusTokens > 0) {
+    state.balance += c.bonusTokens;
+    state.earned += c.bonusTokens;
+    bonusMsg = ' (+' + c.bonusTokens + ' ▣)';
+  }
   saveState();
+  updateBalance();
   updateHeader();
   renderShop();
-  toast(c.emoji + ' ' + c.name + ' unlocked & equipped!');
+  toast(c.emoji + ' ' + c.name + ' unlocked & equipped!' + bonusMsg);
   if (navigator.vibrate) navigator.vibrate([30, 50, 30, 50, 60]);
 }
 
@@ -1967,6 +2082,10 @@ function renderFriends() {
     const online = isFriendOnline(f);
     const statusClass = online ? 'online' : 'offline';
     const statusText = online ? 'Online' : 'Offline';
+    // Offline friends don't show a vs button — you can't request a match against them.
+    const vsBtn = online
+      ? `<button class="friend-vs-btn" title="Request match" onclick="event.stopPropagation();requestFriendMatch(${idx})">⚔ vs</button>`
+      : '';
     return `
       <div class="friend-item friend-item-clickable" onclick="openFriendProfile(${idx})">
         <div class="friend-avatar">${f.avatar || '🤖'}</div>
@@ -1975,7 +2094,7 @@ function renderFriends() {
           <div class="friend-meta">Added ${f.addedAt || 'recently'}</div>
         </div>
         <div class="friend-actions">
-          <button class="friend-vs-btn" title="Request match" onclick="event.stopPropagation();requestFriendMatch(${idx})">⚔ vs</button>
+          ${vsBtn}
           <div class="friend-status ${statusClass}">
             <span class="friend-status-dot"></span>
             <span class="friend-status-label">${statusText}</span>
@@ -2285,11 +2404,17 @@ function openFriendProfile(idx) {
     );
   };
 
-  // Wire Request Match button — same economics as regular PvP (1 token, ranked).
+  // Wire Request Match button — only available when the friend is online.
   const vsBtn = document.getElementById('fp-vs-btn');
-  vsBtn.onclick = () => {
-    requestFriendMatch(_friendProfileIdx);
-  };
+  if (online) {
+    vsBtn.style.display = '';
+    vsBtn.onclick = () => {
+      requestFriendMatch(_friendProfileIdx);
+    };
+  } else {
+    vsBtn.style.display = 'none';
+    vsBtn.onclick = null;
+  }
 
   showView('friend-profile');
 }
