@@ -16,11 +16,12 @@
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   :root{
-    /* Primary brand accent (named --gold for legacy reasons; value is now Diamond ELO blue) */
-    --gold:#9ddffa;--gold-light:#c5ecfd;--bg:#0d0d12;--surface:#16161f;
+    /* Primary brand accent. Default is the original gold; can be overridden by user
+       via Profile theme picker (sets inline --gold/--gold-light on :root via JS). */
+    --gold:#c9a84c;--gold-light:#f0d080;--bg:#0d0d12;--surface:#16161f;
     --surface2:#1e1e2a;--surface3:#26263a;--border:#2e2e44;
     --text:#e8e8f0;--muted:#888;--accent:#4f8ef7;--danger:#e24b4a;
-    --success:#3b9a5a;--win:#9ddffa;--epic:#a96bff;--rare:#4f8ef7;--common:#888;
+    --success:#3b9a5a;--win:#c9a84c;--epic:#a96bff;--rare:#4f8ef7;--common:#888;
     --legendary:#ff9b3d;
     --safe-top:env(safe-area-inset-top,0px);
     --safe-bot:env(safe-area-inset-bottom,0px);
@@ -65,7 +66,7 @@
 
   .elo-hero{background:linear-gradient(135deg,var(--surface),var(--surface2));
     border:1px solid var(--border);border-radius:16px;padding:20px;text-align:center;position:relative;overflow:hidden}
-  .elo-hero::before{content:'';position:absolute;inset:-50%;background:radial-gradient(circle,rgba(157,223,250,.15) 0%,transparent 60%);pointer-events:none}
+  .elo-hero::before{content:'';position:absolute;inset:-50%;background:radial-gradient(circle,rgba(201,168,76,.15) 0%,transparent 60%);pointer-events:none}
   .elo-rank-tier{font-size:11px;letter-spacing:.16em;font-weight:700;text-transform:uppercase;margin-bottom:6px;color:var(--rank-color,var(--gold))}
   .elo-rank{font-family:'Bebas Neue',sans-serif;font-size:54px;line-height:1;color:var(--gold);position:relative;font-weight:700}
   .elo-label{font-size:11px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-top:4px;font-weight:600}
@@ -121,7 +122,7 @@
   .vs{font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--muted);font-weight:700}
   .stake-tag{background:var(--surface3);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--gold);font-weight:600;white-space:nowrap}
 
-  .streak-hud{background:linear-gradient(135deg,rgba(157,223,250,.15),rgba(79,142,247,.08));
+  .streak-hud{background:linear-gradient(135deg,rgba(201,168,76,.15),rgba(79,142,247,.08));
     border:1px solid var(--gold);border-radius:14px;padding:12px 16px;
     display:flex;align-items:center;justify-content:space-between;gap:12px}
   .streak-info{display:flex;flex-direction:column;gap:2px}
@@ -149,6 +150,35 @@
   .pick-dist-row[data-pick="scissors"] .pick-dist-fill{background:linear-gradient(90deg,var(--gold),var(--gold-light))}
   .pick-dist-num{display:flex;align-items:baseline;gap:6px;min-width:64px;justify-content:flex-end;font-family:'Bebas Neue',sans-serif;font-size:18px;font-weight:700;color:var(--gold);flex-shrink:0}
   .pd-pct{font-family:'DM Sans',sans-serif;font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.04em}
+
+  /* THEME PICKER */
+  .theme-picker{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px}
+  .theme-swatch{aspect-ratio:1;border-radius:10px;cursor:pointer;border:2.5px solid transparent;display:flex;align-items:flex-end;justify-content:center;padding:5px 4px;-webkit-user-select:none;transition:transform .15s,border-color .15s;position:relative;overflow:hidden}
+  .theme-swatch:active{transform:scale(.94)}
+  .theme-swatch.selected{border-color:var(--text);box-shadow:0 0 0 2px var(--bg) inset}
+  .theme-swatch-label{font-size:9px;font-weight:700;letter-spacing:.04em;color:#000;background:rgba(255,255,255,.85);padding:2px 5px;border-radius:4px;line-height:1;text-transform:uppercase}
+  .theme-custom-row{display:flex;gap:8px;align-items:center;margin-top:8px}
+  .theme-custom-input{width:48px;height:36px;padding:0;border:1px solid var(--border);border-radius:8px;background:var(--surface2);cursor:pointer;flex-shrink:0}
+  .theme-custom-input::-webkit-color-swatch{border:none;border-radius:6px}
+  .theme-custom-input::-moz-color-swatch{border:none;border-radius:6px}
+  .theme-custom-apply{flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:9px 12px;cursor:pointer;font-size:12px;font-weight:600;letter-spacing:.04em;font-family:inherit}
+  .theme-custom-apply:active{background:var(--surface2)}
+
+  /* SECRET CHALLENGES */
+  .secret-challenges{display:flex;flex-direction:column;gap:8px}
+  .secret-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:12px}
+  .secret-card.unlocked{border-color:var(--gold)}
+  .secret-card.claimed{border-color:var(--success);background:rgba(59,154,90,.05)}
+  .secret-card-emoji{font-size:28px;width:42px;height:42px;display:flex;align-items:center;justify-content:center;flex-shrink:0;filter:grayscale(.7) opacity(.55)}
+  .secret-card.unlocked .secret-card-emoji{filter:none}
+  .secret-info{flex:1;min-width:0}
+  .secret-name{font-weight:700;font-size:13px;line-height:1.2}
+  .secret-card.locked .secret-name{color:var(--muted)}
+  .secret-desc{font-size:11px;color:var(--muted);margin-top:2px;line-height:1.3}
+  .secret-status{font-size:9px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;flex-shrink:0;padding:4px 8px;border-radius:5px}
+  .secret-status.locked{background:var(--surface3);color:var(--muted)}
+  .secret-status.unlocked{background:rgba(201,168,76,.15);color:var(--gold)}
+  .secret-status.claimed{background:rgba(59,154,90,.15);color:var(--success)}
   .pick-history{display:flex;flex-direction:column;gap:6px;padding:6px 0}
   .pick-history:empty{display:none}
   .pick-row{display:flex;align-items:center;gap:8px}
@@ -194,7 +224,7 @@
   .elo-change{font-family:'Bebas Neue',sans-serif;font-size:18px;margin-top:8px;font-weight:700}
   .elo-change.up{color:var(--success)}
   .elo-change.down{color:var(--danger)}
-  .reward-pop{margin-top:10px;padding:10px;background:rgba(157,223,250,.12);border:1px solid var(--gold);border-radius:8px;font-size:12px}
+  .reward-pop{margin-top:10px;padding:10px;background:rgba(201,168,76,.12);border:1px solid var(--gold);border-radius:8px;font-size:12px}
   .reward-pop .emoji-big{font-size:34px;display:block;margin-bottom:4px;line-height:1}
   .reward-pop strong{color:var(--gold)}
   .result-actions{display:flex;gap:8px;margin-top:12px;justify-content:center;flex-wrap:wrap}
@@ -256,7 +286,7 @@
   .bracket-player.loser{color:var(--muted)}
   .bracket-player.tbd{color:var(--border);font-weight:500}
   .bracket-player-clickable{cursor:pointer;border-radius:4px;transition:.12s}
-  .bracket-player-clickable:active{background:rgba(157,223,250,.18)}
+  .bracket-player-clickable:active{background:rgba(201,168,76,.18)}
   .bracket-score{font-size:11px;font-weight:700;min-width:14px;text-align:right}
 
   .history-list{display:flex;flex-direction:column;gap:8px}
@@ -293,7 +323,7 @@
 
   .empty-state{text-align:center;padding:40px 0;color:var(--muted);font-size:14px}
 
-  .install-hint{background:linear-gradient(135deg,rgba(157,223,250,.15),rgba(79,142,247,.1));
+  .install-hint{background:linear-gradient(135deg,rgba(201,168,76,.15),rgba(79,142,247,.1));
     border:1px solid var(--gold);border-radius:12px;padding:14px;
     display:none;font-size:13px;line-height:1.5;position:relative}
   .install-hint.show{display:block}
@@ -348,7 +378,7 @@
   .shop-tabs::-webkit-scrollbar{display:none}
   .shop-tab{flex:1 0 auto;background:var(--surface);border:1px solid var(--border);color:var(--muted);
     border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;transition:.15s;white-space:nowrap}
-  .shop-tab.active{border-color:var(--gold);color:var(--gold);background:rgba(157,223,250,.08)}
+  .shop-tab.active{border-color:var(--gold);color:var(--gold);background:rgba(201,168,76,.08)}
 
   .shop-rarity-section{margin-bottom:14px}
   .shop-rarity-header{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:8px}
@@ -362,7 +392,7 @@
   .shop-item{background:var(--surface);border:1.5px solid var(--border);border-radius:10px;
     padding:10px 4px;text-align:center;cursor:pointer;transition:.15s;position:relative;overflow:hidden}
   .shop-item:active{transform:scale(.96)}
-  .shop-item.equipped{border-color:var(--gold);background:rgba(157,223,250,.1)}
+  .shop-item.equipped{border-color:var(--gold);background:rgba(201,168,76,.1)}
   .shop-item.locked{opacity:.6;cursor:default}
   .shop-emoji{font-size:30px;margin-bottom:4px;height:36px;display:flex;align-items:center;justify-content:center}
   .shop-name{font-size:9px;color:var(--muted);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500;padding:0 2px}
@@ -373,10 +403,10 @@
   .shop-action.free{color:var(--success)}
   .shop-action.locked{color:var(--muted)}
 
-  .shop-featured{background:linear-gradient(135deg,rgba(157,223,250,.1),rgba(79,142,247,.05));
+  .shop-featured{background:linear-gradient(135deg,rgba(201,168,76,.1),rgba(79,142,247,.05));
     border:1px solid var(--gold);border-radius:14px;padding:14px;margin-bottom:14px}
   .shop-featured-header{cursor:pointer;margin:-4px -4px 8px;padding:4px;border-radius:8px;transition:.12s;-webkit-user-select:none}
-  .shop-featured-header:active{background:rgba(157,223,250,.12)}
+  .shop-featured-header:active{background:rgba(201,168,76,.12)}
   .shop-featured-title{font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--gold);font-weight:700;margin-bottom:2px;letter-spacing:.05em;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .shop-featured-cycle{font-size:10px;color:var(--muted);font-weight:600;letter-spacing:.06em;text-transform:none;font-family:'DM Sans',sans-serif}
   .shop-featured-sub{font-size:11px;color:var(--muted)}
@@ -391,7 +421,7 @@
   .back-bar button{background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:7px 12px;cursor:pointer;font-size:12px;font-weight:600}
 
   /* DAILY CLAIM */
-  .daily-claim{background:linear-gradient(135deg,rgba(59,154,90,.15),rgba(157,223,250,.08));
+  .daily-claim{background:linear-gradient(135deg,rgba(59,154,90,.15),rgba(201,168,76,.08));
     border:1px solid var(--success);border-radius:12px;padding:14px;
     display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:10px}
   .daily-claim.claimed{border-color:var(--border);background:var(--surface);opacity:.85}
@@ -421,7 +451,7 @@
   .tier-badge.peak{background:rgba(169,107,255,.2);color:var(--epic);border:1px solid var(--epic)}
 
   /* LEADERBOARD */
-  .leaderboard-link{background:rgba(157,223,250,.12);border:1px solid var(--gold);color:var(--gold);
+  .leaderboard-link{background:rgba(201,168,76,.12);border:1px solid var(--gold);color:var(--gold);
     border-radius:8px;padding:7px 12px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.04em;-webkit-user-select:none;flex-shrink:0}
   .leaderboard-link:active{background:var(--gold);color:#000;transform:scale(.97)}
   .lb-header{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center}
@@ -429,7 +459,7 @@
   .lb-header-label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-top:4px}
   .lb-list{display:flex;flex-direction:column;gap:6px}
   .lb-row{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:.15s}
-  .lb-row.you{border-color:var(--gold);background:rgba(157,223,250,.08)}
+  .lb-row.you{border-color:var(--gold);background:rgba(201,168,76,.08)}
   .lb-row:active{transform:scale(.99);border-color:var(--gold)}
   .lb-rank{font-family:'Bebas Neue',sans-serif;font-size:20px;font-weight:700;color:var(--gold);min-width:34px;text-align:center;line-height:1}
   .lb-rank.r1{color:#ffd700}
@@ -533,7 +563,7 @@
       <div class="mode-grid">
         <div class="mode-card featured" onclick="showLobbySection('pvp')">
           <div class="badge">RANKED</div>
-          <div class="mode-icon">⚔️</div>
+          <div class="mode-icon">🎴</div>
           <div class="mode-name">PvP</div>
           <div class="mode-desc">Ranked match. Affects your ELO.</div>
           <div class="mode-entry">1 token entry</div>
@@ -749,6 +779,16 @@
           <div class="pick-dist-num"><span id="pd-num-scissors">0</span><span class="pd-pct" id="pd-pct-scissors">0%</span></div>
         </div>
       </div>
+      <div class="section-title" style="margin-top:6px">Theme Color</div>
+      <div class="theme-picker" id="theme-picker"></div>
+      <div class="theme-custom-row">
+        <input type="color" class="theme-custom-input" id="theme-custom-input" value="#c9a84c">
+        <button class="theme-custom-apply" onclick="applyCustomTheme()">Apply Custom</button>
+      </div>
+
+      <div class="section-title" style="margin-top:14px">Secret Challenges</div>
+      <div class="secret-challenges" id="secret-challenges"></div>
+
       <div class="section-title" style="margin-top:6px">Owned Emojis (<span id="ps-collection-count">0</span>)</div>
       <div id="ps-collection"></div>
       <button id="reset-btn" onclick="confirmReset()" style="margin-top:8px;background:none;border:1px solid var(--danger);color:var(--danger);border-radius:10px;padding:11px;cursor:pointer;font-size:13px;font-weight:600">Reset all progress (one-time)</button>

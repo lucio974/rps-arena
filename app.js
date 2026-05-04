@@ -61,6 +61,8 @@ const DEFAULT_STATE = {
   shopClicksUnlocked: false,      // 100-clicks challenge revealed (set 3s after threshold)
   lightyearsAchieved: false,      // 10-draws-and-win achievement
   brokenFeatureTriggered: false,  // 0.001% PvP-win RNG (lifetime once, survives reset)
+  // User-customizable theme color (drives --gold and --gold-light at runtime)
+  themeColor: null,               // null = default gold (#c9a84c)
   // Daily free tokens
   lastDailyClaim: null,
   // Daily featured
@@ -84,6 +86,152 @@ let runtime = {
   shopCat: 'all',
   streakState: null,
 };
+
+/* ---- THEME ----
+   The brand accent color (--gold) is user-customizable. Presets cover the
+   common ELO tier vibes plus a few extras; "Custom" lets the user enter any hex. */
+const THEME_PRESETS = [
+  { id: 'gold',     name: 'Gold',      base: '#c9a84c', light: '#f0d080' }, // default
+  { id: 'diamond',  name: 'Diamond',   base: '#9ddffa', light: '#c5ecfd' },
+  { id: 'ruby',     name: 'Ruby',      base: '#e24b6a', light: '#f5839a' },
+  { id: 'emerald',  name: 'Emerald',   base: '#3bcf85', light: '#82e8b4' },
+  { id: 'amethyst', name: 'Amethyst',  base: '#a96bff', light: '#cda3ff' },
+  { id: 'sunset',   name: 'Sunset',    base: '#ff9b3d', light: '#ffc079' },
+  { id: 'rose',     name: 'Rose',      base: '#ffadd6', light: '#ffd0e6' },
+  { id: 'mint',     name: 'Mint',      base: '#7fbab0', light: '#a9d8d0' },
+];
+
+// Compute a lighter companion color from a hex by lerping toward white by 30%.
+function _lightenHex(hex, amount) {
+  amount = (amount === undefined) ? 0.30 : amount;
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  let r = (n >> 16) & 0xff, g = (n >> 8) & 0xff, b = n & 0xff;
+  r = Math.round(r + (255 - r) * amount);
+  g = Math.round(g + (255 - g) * amount);
+  b = Math.round(b + (255 - b) * amount);
+  return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+}
+
+// Apply the user's chosen theme. state.themeColor can be:
+//  - null/undefined → default gold
+//  - a preset id from THEME_PRESETS (e.g. 'diamond')
+//  - a custom hex string starting with '#'
+function applyTheme() {
+  const r = document.documentElement.style;
+  const tc = state && state.themeColor;
+  if (!tc) {
+    r.removeProperty('--gold');
+    r.removeProperty('--gold-light');
+    r.removeProperty('--win');
+    return;
+  }
+  let base, light;
+  const preset = THEME_PRESETS.find(p => p.id === tc);
+  if (preset) {
+    base = preset.base;
+    light = preset.light;
+  } else if (/^#[0-9a-f]{6}$/i.test(tc)) {
+    base = tc;
+    light = _lightenHex(tc, 0.30);
+  } else {
+    // Unknown value — clear overrides
+    r.removeProperty('--gold');
+    r.removeProperty('--gold-light');
+    r.removeProperty('--win');
+    return;
+  }
+  r.setProperty('--gold', base);
+  r.setProperty('--gold-light', light);
+  r.setProperty('--win', base);
+}
+function setTheme(themeId) {
+  state.themeColor = themeId === 'gold' ? null : themeId;
+  saveState();
+  applyTheme();
+  renderProfile();
+}
+function setThemeCustom(hex) {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) { toast('Invalid color'); return; }
+  state.themeColor = hex.toLowerCase();
+  saveState();
+  applyTheme();
+  renderProfile();
+}
+
+// Render the preset swatches grid in the Profile theme picker
+function renderThemePicker() {
+  const grid = document.getElementById('theme-picker');
+  if (!grid) return;
+  const current = state.themeColor || 'gold';
+  grid.innerHTML = THEME_PRESETS.map(p => {
+    const sel = p.id === current ? 'selected' : '';
+    return `
+      <div class="theme-swatch ${sel}" style="background:linear-gradient(135deg,${p.base},${p.light})" onclick="setTheme('${p.id}')" title="${p.name}">
+        <div class="theme-swatch-label">${p.name}</div>
+      </div>
+    `;
+  }).join('');
+  // Sync the color input to the active theme value
+  const input = document.getElementById('theme-custom-input');
+  if (input) {
+    const preset = THEME_PRESETS.find(p => p.id === current);
+    if (preset) input.value = preset.base;
+    else if (/^#[0-9a-f]{6}$/i.test(current)) input.value = current;
+    else input.value = '#c9a84c';
+  }
+}
+// Wired from the "Apply Custom" button — reads the color input value
+function applyCustomTheme() {
+  const input = document.getElementById('theme-custom-input');
+  if (!input) return;
+  setThemeCustom(input.value);
+}
+
+// Render the Secret Challenges section in Profile.
+// Shows ALL hidden challenges. For locked ones: emoji + name + "???" placeholders.
+// For unlocked: full description + progress text. For claimed: success badge.
+function renderSecretChallenges() {
+  const wrap = document.getElementById('secret-challenges');
+  if (!wrap) return;
+  const hidden = CHALLENGE_DEFS.filter(c => c.hidden);
+  if (hidden.length === 0) {
+    wrap.innerHTML = '<div class="empty-state">No secret challenges yet.</div>';
+    return;
+  }
+  wrap.innerHTML = hidden.map(c => {
+    const unlocked = !!(c.unlockFlag && c.unlockFlag());
+    const claimed = (state.claimedChallenges || []).includes(c.id);
+    const owned = state.ownedEmojis.includes(c.emoji);
+    let cardCls = 'secret-card locked';
+    let statusCls = 'locked';
+    let statusLabel = 'LOCKED';
+    if (claimed || owned) {
+      cardCls = 'secret-card claimed';
+      statusCls = 'claimed';
+      statusLabel = 'OWNED';
+    } else if (unlocked) {
+      cardCls = 'secret-card unlocked';
+      statusCls = 'unlocked';
+      statusLabel = 'UNLOCKED';
+    }
+    // Hide description for locked entries — name only.
+    const desc = (claimed || owned || unlocked)
+      ? `<div class="secret-desc">${c.desc}</div>`
+      : `<div class="secret-desc">???</div>`;
+    return `
+      <div class="${cardCls}">
+        <div class="secret-card-emoji">${c.emoji}</div>
+        <div class="secret-info">
+          <div class="secret-name">${c.name}</div>
+          ${desc}
+        </div>
+        <div class="secret-status ${statusCls}">${statusLabel}</div>
+      </div>
+    `;
+  }).join('');
+}
 
 function loadState() {
   try {
@@ -986,7 +1134,7 @@ function renderTourneyList() {
   const el = document.getElementById('tourney-list');
   el.innerHTML = state.tournaments.map(t => {
     const status = t.complete ? '<span style="font-size:10px;background:rgba(136,136,136,.2);color:var(--muted);padding:2px 6px;border-radius:3px">DONE</span>'
-      : t.joined ? '<span style="font-size:10px;background:rgba(157,223,250,.2);color:var(--gold);padding:2px 6px;border-radius:3px">JOINED</span>' : '';
+      : t.joined ? '<span style="font-size:10px;background:rgba(201,168,76,.2);color:var(--gold);padding:2px 6px;border-radius:3px">JOINED</span>' : '';
     const specialBadge = t.special === 'emoji' ? '<span style="font-size:10px;background:rgba(169,107,255,.2);color:var(--epic);padding:2px 6px;border-radius:3px">SPECIAL</span>' : '';
     const hostedBadge = t.hosted ? '<span style="font-size:10px;background:rgba(79,142,247,.2);color:var(--accent);padding:2px 6px;border-radius:3px">HOSTED</span>' : '';
     const prizeDisplay = t.special === 'emoji'
@@ -1322,6 +1470,11 @@ function renderProfile() {
   document.getElementById('pd-fill-paper').style.width = barWidth(pp) + '%';
   document.getElementById('pd-fill-scissors').style.width = barWidth(ps) + '%';
 
+  // Theme picker — render swatches + sync the custom color input
+  renderThemePicker();
+  // Secret challenges section
+  renderSecretChallenges();
+
   const resetBtn = document.getElementById('reset-btn');
   if (state.hasReset) {
     resetBtn.disabled = true;
@@ -1461,11 +1614,11 @@ const CHALLENGE_DEFS = [
       { current: Math.min(state.bestStreak || 0, 10), goal: 10, label: 'PvP win streak' },
     ],
   },
-  // 🧬 Built Different — 100 consecutive PvP wins (very hard, aspirational)
+  // 🧬 Aligned DNA — 100 consecutive PvP wins (very hard, aspirational)
   {
     id: 'built_different',
     emoji: '🧬',
-    name: 'Built Different',
+    name: 'Aligned DNA',
     desc: 'Win 100 PvP matches in a row.',
     progress: () => [{ current: Math.min(state.bestStreak || 0, 100), goal: 100, label: 'PvP wins in a row' }],
   },
@@ -1499,6 +1652,85 @@ const CHALLENGE_DEFS = [
     hidden: true,
     unlockFlag: () => !!state.brokenFeatureTriggered,
     progress: () => [{ current: state.brokenFeatureTriggered ? 1 : 0, goal: 1, label: state.brokenFeatureTriggered ? 'glitch experienced' : '???' }],
+  },
+  // 👽 Mastermind — Grandmaster (1850+ ELO) AND 50%+ win rate
+  {
+    id: 'gm_50wr',
+    emoji: '👽',
+    name: 'Mastermind',
+    desc: 'Reach Grandmaster (1850+ ELO) with at least 50% win rate.',
+    hidden: true,
+    unlockFlag: () => {
+      const elo = state.elo || 0;
+      const games = state.games || 0;
+      const wr = games > 0 ? (state.wins || 0) / games : 0;
+      return elo >= 1850 && wr >= 0.5;
+    },
+    progress: () => {
+      const elo = state.elo || 0;
+      const games = state.games || 0;
+      const wr = games > 0 ? Math.round(((state.wins || 0) / games) * 100) : 0;
+      const eloDone = elo >= 1850;
+      const wrDone = wr >= 50;
+      return [
+        { current: Math.min(elo, 1850), goal: 1850, label: eloDone ? 'GM reached' : 'ELO progress' },
+        { current: Math.min(wr, 50), goal: 50, label: wrDone ? '50% WR ✓' : 'win rate %' },
+      ];
+    },
+  },
+  // 🃏 Trickster Supreme — Grandmaster AND 70%+ win rate
+  {
+    id: 'gm_70wr',
+    emoji: '🃏',
+    name: 'Trickster Supreme',
+    desc: 'Reach Grandmaster (1850+ ELO) with at least 70% win rate.',
+    hidden: true,
+    unlockFlag: () => {
+      const elo = state.elo || 0;
+      const games = state.games || 0;
+      const wr = games > 0 ? (state.wins || 0) / games : 0;
+      return elo >= 1850 && wr >= 0.7;
+    },
+    progress: () => {
+      const elo = state.elo || 0;
+      const games = state.games || 0;
+      const wr = games > 0 ? Math.round(((state.wins || 0) / games) * 100) : 0;
+      const eloDone = elo >= 1850;
+      const wrDone = wr >= 70;
+      return [
+        { current: Math.min(elo, 1850), goal: 1850, label: eloDone ? 'GM reached' : 'ELO progress' },
+        { current: Math.min(wr, 70), goal: 70, label: wrDone ? '70% WR ✓' : 'win rate %' },
+      ];
+    },
+  },
+  // 🐣 There is a Strat? — drop to 900 ELO (low water mark)
+  {
+    id: 'low_900',
+    emoji: '🐣',
+    name: 'There is a Strat?',
+    desc: 'Drop to 900 ELO or below. (Yes, there is a strat.)',
+    hidden: true,
+    unlockFlag: () => (state.lowestElo !== undefined ? state.lowestElo : 1000) <= 900,
+    progress: () => {
+      const lo = state.lowestElo !== undefined ? state.lowestElo : 1000;
+      // Inverted progress: starts at 1000, "progress" is how far below 900 you've gone (capped at 100 = full bar)
+      const dropped = Math.max(0, 1000 - lo);
+      return [{ current: Math.min(dropped, 100), goal: 100, label: lo <= 900 ? 'rock bottom found' : 'ELO drop progress' }];
+    },
+  },
+  // 🪼 Deep Reverse Ladder — drop to 200 ELO (extreme low)
+  {
+    id: 'low_200',
+    emoji: '🪼',
+    name: 'Deep Reverse Ladder',
+    desc: 'Drop to 200 ELO or below. The abyss stares back.',
+    hidden: true,
+    unlockFlag: () => (state.lowestElo !== undefined ? state.lowestElo : 1000) <= 200,
+    progress: () => {
+      const lo = state.lowestElo !== undefined ? state.lowestElo : 1000;
+      const dropped = Math.max(0, 1000 - lo);
+      return [{ current: Math.min(dropped, 800), goal: 800, label: lo <= 200 ? 'abyss reached' : 'ELO drop progress' }];
+    },
   },
   {
     id: 'win_100',
@@ -2452,6 +2684,7 @@ function dismissInstall() {
 }
 
 /* ---- INIT ---- */
+applyTheme();
 updateBalance();
 updateHeader();
 initTourneys();
