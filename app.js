@@ -731,15 +731,15 @@ function endGame(g) {
         }
       }
 
-      // ── 0.1% chance: "The Odds? 0.1% Chances." (lifetime once, survives reset) ──
+      // ── 0.1% chance: "Alien Invaders" (lifetime once, survives reset) ──
       if (!state.oddsTriggered && Math.random() < 0.001) {
         state.oddsTriggered = true;
         if (!state.ownedEmojis.includes('👾')) state.ownedEmojis.push('👾');
-        setTimeout(() => toast('👾 The Odds? 0.1% Chances. — hidden challenge unlocked!', { reward: true }), 1700);
+        setTimeout(() => toast('👾 Alien Invaders — hidden challenge unlocked!', { reward: true }), 1700);
         if (navigator.vibrate) navigator.vibrate([40, 60, 40, 60, 100]);
       }
 
-      // ── 0.001% chance: +AURA UNLOCK (formerly "Broken Feature ofc") ──
+      // ── 0.001% chance: +AURA (formerly "Broken Feature ofc") ──
       // Lifetime once, survives reset. -1000 tokens, grants 🔖, secret reset re-enable.
       if (!state.brokenFeatureTriggered && Math.random() < 0.00001) {
         state.brokenFeatureTriggered = true;
@@ -747,7 +747,7 @@ function endGame(g) {
         if (!state.ownedEmojis.includes('🔖')) state.ownedEmojis.push('🔖');
         // Secret reset re-enable (no UI announcement)
         state.hasReset = false;
-        setTimeout(() => toast('🔖 +Aura Unlock — -1000 tokens. RIP.', { reward: true }), 1900);
+        setTimeout(() => toast('🔖 +Aura — -1000 tokens. RIP.', { reward: true }), 1900);
         if (navigator.vibrate) navigator.vibrate([100, 80, 100, 80, 200]);
       }
     } else if (draw) {
@@ -1672,21 +1672,21 @@ const CHALLENGE_DEFS = [
     unlockFlag: () => !!state.lightyearsAchieved,
     progress: () => [{ current: state.lightyearsAchieved ? 1 : 0, goal: 1, label: state.lightyearsAchieved ? 'achieved' : 'not yet achieved' }],
   },
-  // 🔖 +Aura Unlock — hidden, triggers on 0.001% PvP win RNG
+  // 🔖 +Aura — hidden, triggers on 0.001% PvP win RNG
   {
     id: 'broken_feature',
     emoji: '🔖',
-    name: '+Aura Unlock',
-    desc: 'You found the bug. Or it found you.',
+    name: '+Aura',
+    desc: 'Luckiest item in the game, reset and go flex the ladder from the begining',
     hidden: true,
     unlockFlag: () => !!state.brokenFeatureTriggered,
     progress: () => [{ current: state.brokenFeatureTriggered ? 1 : 0, goal: 1, label: state.brokenFeatureTriggered ? 'glitch experienced' : '???' }],
   },
-  // 👾 The Odds? 0.1% Chances. — hidden, triggers on 0.1% PvP-win RNG (lifetime once)
+  // 👾 Alien Invaders — hidden, triggers on 0.1% PvP-win RNG (lifetime once)
   {
     id: 'gm_50wr',  // legacy id retained so existing claimedChallenges arrays remain valid
     emoji: '👾',
-    name: 'The Odds? 0.1% Chances.',
+    name: 'Alien Invaders',
     desc: 'You hit a 1-in-1000 PvP win drop.',
     hidden: true,
     unlockFlag: () => !!state.oddsTriggered,
