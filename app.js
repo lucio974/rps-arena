@@ -61,6 +61,7 @@ const DEFAULT_STATE = {
   shopClicksUnlocked: false,      // 100-clicks challenge revealed (set 3s after threshold)
   lightyearsAchieved: false,      // 10-draws-and-win achievement
   brokenFeatureTriggered: false,  // 0.001% PvP-win RNG (lifetime once, survives reset)
+  oddsTriggered: false,           // 0.1% PvP-win RNG (lifetime once, survives reset)
   // User-customizable theme color (drives --gold and --gold-light at runtime)
   themeColor: null,               // null = default gold (#c9a84c)
   // Daily free tokens
@@ -114,6 +115,14 @@ function _lightenHex(hex, amount) {
   return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
 }
 
+// Convert a #rrggbb hex to an "R,G,B" comma-separated string for use inside rgba().
+function _hexToRgbTriplet(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return '201,168,76';
+  const n = parseInt(m[1], 16);
+  return ((n >> 16) & 0xff) + ',' + ((n >> 8) & 0xff) + ',' + (n & 0xff);
+}
+
 // Apply the user's chosen theme. state.themeColor can be:
 //  - null/undefined → default gold
 //  - a preset id from THEME_PRESETS (e.g. 'diamond')
@@ -124,6 +133,7 @@ function applyTheme() {
   if (!tc) {
     r.removeProperty('--gold');
     r.removeProperty('--gold-light');
+    r.removeProperty('--gold-rgb');
     r.removeProperty('--win');
     return;
   }
@@ -139,11 +149,13 @@ function applyTheme() {
     // Unknown value — clear overrides
     r.removeProperty('--gold');
     r.removeProperty('--gold-light');
+    r.removeProperty('--gold-rgb');
     r.removeProperty('--win');
     return;
   }
   r.setProperty('--gold', base);
   r.setProperty('--gold-light', light);
+  r.setProperty('--gold-rgb', _hexToRgbTriplet(base));
   r.setProperty('--win', base);
 }
 function setTheme(themeId) {
@@ -277,10 +289,9 @@ function beats(a,b){return(a==='rock'&&b==='scissors')||(a==='paper'&&b==='rock'
 function botName(){return rnd(BOT_NAMES)}
 function pvpName(){return rnd(PVP_NAMES)}
 
-// Random bot avatar - excludes Rock (challenge-locked)
+// Random bot avatar - any catalog emoji
 function randomBotEmoji() {
-  const pool = EMOJI_CATALOG.filter(e => e.e !== ROCK_EMOJI);
-  return pool[Math.floor(Math.random() * pool.length)].e;
+  return EMOJI_CATALOG[Math.floor(Math.random() * EMOJI_CATALOG.length)].e;
 }
 
 // Random opponent ELO near the player's rating, for PvP display
@@ -315,33 +326,31 @@ function _pickFeaturedFromPool(pool, rng) {
   }
   return picks;
 }
-// Initial seed (and validity check). Only seeds if there's no current selection or any
-// cached emoji is now invalid (e.g. became challenge-locked). After tap-to-cycle is used,
-// the user's manual selection is preserved across renders/sessions.
+// Hourly bucket key — featured selection rotates every hour, seeded by the bucket so
+// it's stable within the hour but changes deterministically as the hour rolls over.
+function featuredBucketKey() {
+  const d = new Date();
+  return d.getFullYear() + '-' + (d.getMonth()+1) + '-' + d.getDate() + '-' + d.getHours();
+}
+// Refresh featured emojis. Re-seeds whenever the hour bucket changes OR any cached
+// emoji is no longer in the allowed pool (e.g. became challenge-locked).
 function refreshFeatured() {
   const pool = getShopPool();
-  if (state.featuredEmojis && state.featuredEmojis.length === 4) {
+  const bucket = featuredBucketKey();
+  if (state.featuredBucket === bucket && state.featuredEmojis && state.featuredEmojis.length === 4) {
     const allowed = new Set(pool.map(e => e.e));
     if (state.featuredEmojis.every(e => allowed.has(e))) return;
   }
-  // Seed once from a stable per-day key
-  const seed = todayKey().split('-').reduce((a,b) => a + parseInt(b), 0);
+  // Seed from the bucket key (year-month-day-hour) for a deterministic but rotating selection.
+  const seed = bucket.split('-').reduce((a,b) => a + parseInt(b), 0);
   let s = seed;
   const rng = () => {
     s = (s * 9301 + 49297) % 233280;
     return s / 233280;
   };
   state.featuredEmojis = _pickFeaturedFromPool(pool, rng);
+  state.featuredBucket = bucket;
   saveState();
-}
-// Tap to cycle: replaces the current selection with 4 fresh random picks.
-function cycleFeatured() {
-  const pool = getShopPool();
-  if (pool.length === 0) return;
-  state.featuredEmojis = _pickFeaturedFromPool(pool, Math.random);
-  saveState();
-  renderFeatured();
-  if (navigator.vibrate) navigator.vibrate(10);
 }
 
 /* CHALLENGES */
@@ -373,7 +382,7 @@ function showView(id) {
       setTimeout(() => {
         state.shopClicksUnlocked = true;
         saveState();
-        toast('🧇 Hidden challenge unlocked: Finally Served');
+        toast('🧇 Hidden challenge unlocked: Finally Served', { reward: true });
         if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
         // Refresh challenges list if the user happens to be on the shop view
         if (document.getElementById('view-shop').classList.contains('active')) {
@@ -444,11 +453,26 @@ function renderEloHero() {
   if (tmax) tmax.textContent = nextIdx < ELO_TIERS.length ? ELO_TIERS[nextIdx].name : 'MAX';
 }
 
-function toast(msg) {
+function toast(msg, opts) {
+  opts = opts || {};
   const t = document.getElementById('toast');
   t.innerHTML = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2400);
+  // Reward toasts appear at the top with a longer duration; regular toasts stay
+  // at the bottom with the default short duration.
+  if (opts.reward) {
+    t.classList.add('reward');
+    t.classList.add('show');
+    if (t._timer) clearTimeout(t._timer);
+    t._timer = setTimeout(() => {
+      t.classList.remove('show');
+      t.classList.remove('reward');
+    }, 4000);
+  } else {
+    t.classList.remove('reward');
+    t.classList.add('show');
+    if (t._timer) clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove('show'), 2400);
+  }
 }
 
 /* PvP single match info card */
@@ -691,7 +715,7 @@ function endGame(g) {
       if (!state.lightyearsAchieved && (g.matchDraws || 0) >= 10) {
         state.lightyearsAchieved = true;
         // Defer the toast slightly so it doesn't collide with the win popup
-        setTimeout(() => toast('🛸 Hidden challenge unlocked: Lightyears Ahead!'), 1200);
+        setTimeout(() => toast('🛸 Hidden challenge unlocked: Lightyears Ahead!', { reward: true }), 1200);
       }
 
       // ── 1% chance: random emoji you don't yet own ──
@@ -702,20 +726,28 @@ function endGame(g) {
         if (unowned.length > 0) {
           const pick = unowned[Math.floor(Math.random() * unowned.length)];
           state.ownedEmojis.push(pick.e);
-          setTimeout(() => toast('🎁 Bonus drop: ' + pick.e + ' ' + pick.name + '!'), 1500);
+          setTimeout(() => toast('🎁 Bonus drop: ' + pick.e + ' ' + pick.name + '!', { reward: true }), 1500);
           if (navigator.vibrate) navigator.vibrate([10, 30, 10, 30, 60]);
         }
       }
 
-      // ── 0.001% chance: BROKEN FEATURE (lifetime once, survives reset) ──
+      // ── 0.1% chance: "The Odds? 0.1% Chances." (lifetime once, survives reset) ──
+      if (!state.oddsTriggered && Math.random() < 0.001) {
+        state.oddsTriggered = true;
+        if (!state.ownedEmojis.includes('👾')) state.ownedEmojis.push('👾');
+        setTimeout(() => toast('👾 The Odds? 0.1% Chances. — hidden challenge unlocked!', { reward: true }), 1700);
+        if (navigator.vibrate) navigator.vibrate([40, 60, 40, 60, 100]);
+      }
+
+      // ── 0.001% chance: +AURA UNLOCK (formerly "Broken Feature ofc") ──
+      // Lifetime once, survives reset. -1000 tokens, grants 🔖, secret reset re-enable.
       if (!state.brokenFeatureTriggered && Math.random() < 0.00001) {
         state.brokenFeatureTriggered = true;
         state.balance -= 1000;            // negative balance allowed
         if (!state.ownedEmojis.includes('🔖')) state.ownedEmojis.push('🔖');
         // Secret reset re-enable (no UI announcement)
         state.hasReset = false;
-        // Cosmic-event toast
-        setTimeout(() => toast('🔖 Broken feature ofc — -1000 tokens. RIP.'), 1800);
+        setTimeout(() => toast('🔖 +Aura Unlock — -1000 tokens. RIP.', { reward: true }), 1900);
         if (navigator.vibrate) navigator.vibrate([100, 80, 100, 80, 200]);
       }
     } else if (draw) {
@@ -960,11 +992,11 @@ function leaveGame() {
 
 /* ---- TOURNAMENTS ---- */
 const TOURNEY_TEMPLATES = [
-  { name: 'Mystery Emoji Cup', entry: 10, prize: 0, slots: 4, special: 'emoji', bo: 3 },
-  { name: 'Beginner Bash',  entry: 1,  prize: 6,  slots: 7, special: false, bo: 3 },
-  { name: 'Weekend Brawl',  entry: 2,  prize: 12, slots: 5, special: false, bo: 3 },
-  { name: 'Coin Clashers',  entry: 3,  prize: 20, slots: 6, special: false, bo: 3 },
-  { name: 'Elite Cup',      entry: 5,  prize: 35, slots: 3, special: false, bo: 3 },
+  { name: 'Mystery Emoji Cup', entry: 10, prize: 0, slots: 4, special: 'emoji', bo: 5 },
+  { name: 'Beginner Bash',  entry: 1,  prize: 6,  slots: 7, special: false, bo: 5 },
+  { name: 'Weekend Brawl',  entry: 2,  prize: 12, slots: 5, special: false, bo: 5 },
+  { name: 'Coin Clashers',  entry: 3,  prize: 20, slots: 6, special: false, bo: 5 },
+  { name: 'Elite Cup',      entry: 5,  prize: 35, slots: 3, special: false, bo: 5 },
 ];
 
 function initTourneys() {
@@ -1134,7 +1166,7 @@ function renderTourneyList() {
   const el = document.getElementById('tourney-list');
   el.innerHTML = state.tournaments.map(t => {
     const status = t.complete ? '<span style="font-size:10px;background:rgba(136,136,136,.2);color:var(--muted);padding:2px 6px;border-radius:3px">DONE</span>'
-      : t.joined ? '<span style="font-size:10px;background:rgba(201,168,76,.2);color:var(--gold);padding:2px 6px;border-radius:3px">JOINED</span>' : '';
+      : t.joined ? '<span style="font-size:10px;background:rgba(var(--gold-rgb),.2);color:var(--gold);padding:2px 6px;border-radius:3px">JOINED</span>' : '';
     const specialBadge = t.special === 'emoji' ? '<span style="font-size:10px;background:rgba(169,107,255,.2);color:var(--epic);padding:2px 6px;border-radius:3px">SPECIAL</span>' : '';
     const hostedBadge = t.hosted ? '<span style="font-size:10px;background:rgba(79,142,247,.2);color:var(--accent);padding:2px 6px;border-radius:3px">HOSTED</span>' : '';
     const prizeDisplay = t.special === 'emoji'
@@ -1216,13 +1248,16 @@ function buildBracket(t) {
     { p1: null, p2: null, s1: null, s2: null, done: false },
   ];
   const final = [{ p1: null, p2: null, s1: null, s2: null, done: false }];
+  // Win threshold for AI-vs-AI bracket simulation. Scales with the tournament's bo
+  // (bo:3 → first-to-2; bo:5 → first-to-3; bo:7 → first-to-4).
+  const winThreshold = Math.ceil((t.bo || 3) / 2);
   for (let i = 0; i < 4; i++) {
     const m = r1[i];
     if (m.p1 === 'You' || m.p2 === 'You') continue;
     const w = Math.random() < 0.5 ? m.p1 : m.p2;
-    // AI matches: never a tie (someone reaches 2 wins)
-    m.s1 = m.p1 === w ? 2 : Math.floor(Math.random() * 2);
-    m.s2 = m.p2 === w ? 2 : Math.floor(Math.random() * 2);
+    // AI matches: never a tie (someone reaches the win threshold)
+    m.s1 = m.p1 === w ? winThreshold : Math.floor(Math.random() * winThreshold);
+    m.s2 = m.p2 === w ? winThreshold : Math.floor(Math.random() * winThreshold);
     m.done = true; m.winner = w;
     const ri = Math.floor(i / 2);
     if (i % 2 === 0) r2[ri].p1 = w; else r2[ri].p2 = w;
@@ -1338,6 +1373,9 @@ function onTourneyMatchContinue(won) {
   m.s2 = m.p2 === 'You' ? g.scoreYou : g.scoreOpp;
   m.done = true;
   m.winner = won ? 'You' : (m.p1 === 'You' ? m.p2 : m.p1);
+  // Win threshold for AI-vs-AI bracket advancement (scales with tournament's bo)
+  const aiWin = Math.ceil((t.bo || 3) / 2);
+  const aiLose = aiWin - 1;
   const nextRound = roundIdx + 1;
   if (won && nextRound < t.bracket.rounds.length) {
     const nextMatchIdx = Math.floor(matchIdx / 2);
@@ -1347,8 +1385,8 @@ function onTourneyMatchContinue(won) {
       const otherSF = t.bracket.rounds[1][1 - nextMatchIdx];
       if (otherSF.p1 && otherSF.p2 && !otherSF.done) {
         const w = Math.random() < 0.5 ? otherSF.p1 : otherSF.p2;
-        otherSF.s1 = otherSF.p1 === w ? 2 : 1;
-        otherSF.s2 = otherSF.p2 === w ? 2 : 1;
+        otherSF.s1 = otherSF.p1 === w ? aiWin : aiLose;
+        otherSF.s2 = otherSF.p2 === w ? aiWin : aiLose;
         otherSF.done = true; otherSF.winner = w;
         const fin = t.bracket.rounds[2][0];
         if (nextMatchIdx === 0) fin.p2 = w; else fin.p1 = w;
@@ -1360,7 +1398,7 @@ function onTourneyMatchContinue(won) {
         if (mm.done) continue;
         if (mm.p1 && mm.p2) {
           const w = Math.random() < 0.5 ? mm.p1 : mm.p2;
-          mm.s1 = mm.p1 === w ? 2 : 1; mm.s2 = mm.p2 === w ? 2 : 1;
+          mm.s1 = mm.p1 === w ? aiWin : aiLose; mm.s2 = mm.p2 === w ? aiWin : aiLose;
           mm.done = true; mm.winner = w;
           if (ri + 1 < t.bracket.rounds.length) {
             const nmi = Math.floor(t.bracket.rounds[ri].indexOf(mm) / 2);
@@ -1380,15 +1418,15 @@ function onTourneyMatchContinue(won) {
       if (unowned.length > 0) {
         const reward = unowned[Math.floor(Math.random() * unowned.length)];
         state.ownedEmojis.push(reward.e);
-        toast('🏆 Champion! Unlocked ' + reward.name + ' ' + reward.e);
+        toast('🏆 Champion! Unlocked ' + reward.name + ' ' + reward.e, { reward: true });
       } else {
         // Edge case: player owns everything → give 25 tokens instead
         state.balance += 25; state.earned += 25;
-        toast('🏆 Champion! All emojis owned — +25 tokens instead');
+        toast('🏆 Champion! All emojis owned — +25 tokens instead', { reward: true });
       }
     } else {
       state.balance += t.prize; state.earned += t.prize;
-      toast('🏆 Champion! +' + t.prize + ' tokens');
+      toast('🏆 Champion! +' + t.prize + ' tokens', { reward: true });
     }
     state.tourneysWon = (state.tourneysWon || 0) + 1;
     updateBalance();
@@ -1553,14 +1591,16 @@ function executeReset() {
   // Preserve owned emojis and current avatar across reset
   const keptEmojis = [...state.ownedEmojis];
   const keptAvatar = state.avatar;
-  // Lifetime flag: broken-feature can only ever fire once per user, even after a reset.
-  // (Otherwise users could farm resets to retry the 0.001% bookmark drop.)
+  // Lifetime flags: lifetime-once challenges can never re-fire after a reset.
+  // (Otherwise users could farm resets to retry these RNG drops.)
   const keptBroken = !!state.brokenFeatureTriggered;
+  const keptOdds = !!state.oddsTriggered;
   const fresh = { ...DEFAULT_STATE };
   fresh.hasReset = true;
   fresh.ownedEmojis = keptEmojis;
   fresh.avatar = keptAvatar;
   fresh.brokenFeatureTriggered = keptBroken;
+  fresh.oddsTriggered = keptOdds;
   state = fresh;
   saveState();
   closeResetModal();
@@ -1603,17 +1643,6 @@ function renderFeatured() {
    Each challenge has either an emoji reward (default) or a token reward (rewardType:'tokens').
    Emoji challenges grant the emoji once claimed; token challenges credit tokens to balance. */
 const CHALLENGE_DEFS = [
-  // Rock Reborn — original challenge, dual-progress
-  {
-    id: 'rock_reborn',
-    emoji: ROCK_EMOJI,
-    name: 'Rock Reborn',
-    desc: 'Unlock the legendary Rock emoji.',
-    progress: () => [
-      { current: Math.min(state.tourneysWon || 0, 5), goal: 5, label: 'tournaments won' },
-      { current: Math.min(state.bestStreak || 0, 10), goal: 10, label: 'PvP win streak' },
-    ],
-  },
   // 🧬 Aligned DNA — 100 consecutive PvP wins (very hard, aspirational)
   {
     id: 'built_different',
@@ -1643,71 +1672,56 @@ const CHALLENGE_DEFS = [
     unlockFlag: () => !!state.lightyearsAchieved,
     progress: () => [{ current: state.lightyearsAchieved ? 1 : 0, goal: 1, label: state.lightyearsAchieved ? 'achieved' : 'not yet achieved' }],
   },
-  // 🔖 Broken Feature ofc — hidden, triggers on 0.001% PvP win RNG
+  // 🔖 +Aura Unlock — hidden, triggers on 0.001% PvP win RNG
   {
     id: 'broken_feature',
     emoji: '🔖',
-    name: 'Broken Feature ofc',
+    name: '+Aura Unlock',
     desc: 'You found the bug. Or it found you.',
     hidden: true,
     unlockFlag: () => !!state.brokenFeatureTriggered,
     progress: () => [{ current: state.brokenFeatureTriggered ? 1 : 0, goal: 1, label: state.brokenFeatureTriggered ? 'glitch experienced' : '???' }],
   },
-  // 👽 Mastermind — Grandmaster (1850+ ELO) AND 50%+ win rate
+  // 👾 The Odds? 0.1% Chances. — hidden, triggers on 0.1% PvP-win RNG (lifetime once)
   {
-    id: 'gm_50wr',
-    emoji: '👽',
-    name: 'Mastermind',
-    desc: 'Reach Grandmaster (1850+ ELO) with at least 50% win rate.',
+    id: 'gm_50wr',  // legacy id retained so existing claimedChallenges arrays remain valid
+    emoji: '👾',
+    name: 'The Odds? 0.1% Chances.',
+    desc: 'You hit a 1-in-1000 PvP win drop.',
     hidden: true,
-    unlockFlag: () => {
-      const elo = state.elo || 0;
-      const games = state.games || 0;
-      const wr = games > 0 ? (state.wins || 0) / games : 0;
-      return elo >= 1850 && wr >= 0.5;
-    },
-    progress: () => {
-      const elo = state.elo || 0;
-      const games = state.games || 0;
-      const wr = games > 0 ? Math.round(((state.wins || 0) / games) * 100) : 0;
-      const eloDone = elo >= 1850;
-      const wrDone = wr >= 50;
-      return [
-        { current: Math.min(elo, 1850), goal: 1850, label: eloDone ? 'GM reached' : 'ELO progress' },
-        { current: Math.min(wr, 50), goal: 50, label: wrDone ? '50% WR ✓' : 'win rate %' },
-      ];
-    },
+    unlockFlag: () => !!state.oddsTriggered,
+    progress: () => [{ current: state.oddsTriggered ? 1 : 0, goal: 1, label: state.oddsTriggered ? 'odds beaten' : '???' }],
   },
-  // 🃏 Trickster Supreme — Grandmaster AND 70%+ win rate
+  // 🃏 Skill Based — Grandmaster AND 60%+ win rate
   {
-    id: 'gm_70wr',
+    id: 'gm_70wr',  // legacy id retained so existing claimedChallenges arrays remain valid
     emoji: '🃏',
-    name: 'Trickster Supreme',
-    desc: 'Reach Grandmaster (1850+ ELO) with at least 70% win rate.',
+    name: 'Skill Based',
+    desc: 'Reach Grandmaster (1850+ ELO) with at least 60% win rate.',
     hidden: true,
     unlockFlag: () => {
       const elo = state.elo || 0;
       const games = state.games || 0;
       const wr = games > 0 ? (state.wins || 0) / games : 0;
-      return elo >= 1850 && wr >= 0.7;
+      return elo >= 1850 && wr >= 0.6;
     },
     progress: () => {
       const elo = state.elo || 0;
       const games = state.games || 0;
       const wr = games > 0 ? Math.round(((state.wins || 0) / games) * 100) : 0;
       const eloDone = elo >= 1850;
-      const wrDone = wr >= 70;
+      const wrDone = wr >= 60;
       return [
         { current: Math.min(elo, 1850), goal: 1850, label: eloDone ? 'GM reached' : 'ELO progress' },
-        { current: Math.min(wr, 70), goal: 70, label: wrDone ? '70% WR ✓' : 'win rate %' },
+        { current: Math.min(wr, 60), goal: 60, label: wrDone ? '60% WR ✓' : 'win rate %' },
       ];
     },
   },
-  // 🐣 There is a Strat? — drop to 900 ELO (low water mark)
+  // 🐣 There's a Strat? — drop to 900 ELO (low water mark)
   {
     id: 'low_900',
     emoji: '🐣',
-    name: 'There is a Strat?',
+    name: "There's a Strat?",
     desc: 'Drop to 900 ELO or below. (Yes, there is a strat.)',
     hidden: true,
     unlockFlag: () => (state.lowestElo !== undefined ? state.lowestElo : 1000) <= 900,
@@ -1750,8 +1764,8 @@ const CHALLENGE_DEFS = [
     id: 'draw_30',
     emoji: '🤓',
     name: 'What a Read!',
-    desc: 'Draw 100 rounds.',
-    progress: () => [{ current: Math.min(state.drawRounds || 0, 100), goal: 100, label: 'rounds drawn' }],
+    desc: 'Draw 500 rounds.',
+    progress: () => [{ current: Math.min(state.drawRounds || 0, 500), goal: 500, label: 'rounds drawn' }],
   },
   {
     id: 'lose_30',
@@ -1771,7 +1785,7 @@ const CHALLENGE_DEFS = [
     id: 'collector_10',
     emoji: '🪕',
     name: 'Collector',
-    desc: 'Collect 10 emojis (not counting the starter).',
+    desc: 'Collect 10 emojis.',
     progress: () => {
       // Count owned emojis excluding the starter 😀. So a fresh user with just the starter
       // is at 0/10; collecting 10 more (any source: shop, challenge, reward) completes it.
@@ -1899,7 +1913,7 @@ function claimChallenge(id) {
     updateBalance();
     updateHeader();
     renderShop();
-    toast('+' + c.rewardAmount + ' tokens — ' + c.name + ' claimed!');
+    toast('+' + c.rewardAmount + ' tokens — ' + c.name + ' claimed!', { reward: true });
     if (navigator.vibrate) navigator.vibrate([30, 50, 30, 50, 60]);
     return;
   }
@@ -1921,7 +1935,7 @@ function claimChallenge(id) {
   updateBalance();
   updateHeader();
   renderShop();
-  toast(c.emoji + ' ' + c.name + ' unlocked & equipped!' + bonusMsg);
+  toast(c.emoji + ' ' + c.name + ' unlocked & equipped!' + bonusMsg, { reward: true });
   if (navigator.vibrate) navigator.vibrate([30, 50, 30, 50, 60]);
 }
 
@@ -1961,7 +1975,7 @@ function getChallengeLockedEmojis() {
   // claim-only (never browsable, never featured). Token-reward challenges use
   // an emoji as a tile icon but the emoji isn't actually granted, so we don't
   // lock it from the shop.
-  const set = new Set([ROCK_EMOJI]);
+  const set = new Set();
   if (typeof CHALLENGE_DEFS !== 'undefined') {
     for (const c of CHALLENGE_DEFS) {
       if (c.rewardType === 'tokens') continue;
@@ -1978,10 +1992,6 @@ function getChallengeEmojiOverrides() {
   for (const c of CHALLENGE_DEFS) {
     if (c.rewardType === 'tokens') continue;
     map[c.emoji] = { e: c.emoji, name: c.name, cat: 'challenge', price: 0, rarity: 'legendary' };
-  }
-  // Rock has its own challenge; ensure it's in the map even if absent from CHALLENGE_DEFS
-  if (!map[ROCK_EMOJI]) {
-    map[ROCK_EMOJI] = { e: ROCK_EMOJI, name: 'Rock', cat: 'challenge', price: 0, rarity: 'legendary' };
   }
   return map;
 }
