@@ -731,11 +731,11 @@ function endGame(g) {
         }
       }
 
-      // ── 0.1% chance: "1 in 1000 Player" (lifetime once, survives reset) ──
+      // ── 0.1% chance: "Slight Chance" (lifetime once, survives reset) ──
       if (!state.oddsTriggered && Math.random() < 0.001) {
         state.oddsTriggered = true;
         if (!state.ownedEmojis.includes('👾')) state.ownedEmojis.push('👾');
-        setTimeout(() => toast('👾 1 in 1000 Player — hidden challenge unlocked!', { reward: true }), 1700);
+        setTimeout(() => toast('👾 Slight Chance — hidden challenge unlocked!', { reward: true }), 1700);
         if (navigator.vibrate) navigator.vibrate([40, 60, 40, 60, 100]);
       }
 
@@ -747,7 +747,7 @@ function endGame(g) {
         if (!state.ownedEmojis.includes('🔖')) state.ownedEmojis.push('🔖');
         // Secret reset re-enable (no UI announcement)
         state.hasReset = false;
-        setTimeout(() => toast('🔖 +aura — -1000 tokens. RIP.', { reward: true }), 1900);
+        setTimeout(() => toast('🔖 +aura — -1000 tokens. Check profile.', { reward: true }), 1900);
         if (navigator.vibrate) navigator.vibrate([100, 80, 100, 80, 200]);
       }
     } else if (draw) {
@@ -1682,11 +1682,11 @@ const CHALLENGE_DEFS = [
     unlockFlag: () => !!state.brokenFeatureTriggered,
     progress: () => [{ current: state.brokenFeatureTriggered ? 1 : 0, goal: 1, label: state.brokenFeatureTriggered ? 'glitch experienced' : '???' }],
   },
-  // 👾 1 in a 1000 Player — hidden, triggers on 0.1% PvP-win RNG (lifetime once)
+  // 👾 Slight Chance — hidden, triggers on 0.1% PvP-win RNG (lifetime once)
   {
     id: 'gm_50wr',  // legacy id retained so existing claimedChallenges arrays remain valid
     emoji: '👾',
-    name: '1 in a 1000 Player',
+    name: 'Slight Chance',
     desc: 'You hit a 1-in-1000 PvP win drop.',
     hidden: true,
     unlockFlag: () => !!state.oddsTriggered,
