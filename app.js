@@ -1677,7 +1677,7 @@ const CHALLENGE_DEFS = [
     id: 'broken_feature',
     emoji: '🔖',
     name: '+aura',
-    desc: 'Luckiest item in the game, reset and go flex the ladder from the begining',
+    desc: 'Luckiest item in the game, reset and go flex the ladder from start',
     hidden: true,
     unlockFlag: () => !!state.brokenFeatureTriggered,
     progress: () => [{ current: state.brokenFeatureTriggered ? 1 : 0, goal: 1, label: state.brokenFeatureTriggered ? 'glitch experienced' : '???' }],
