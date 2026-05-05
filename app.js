@@ -731,11 +731,11 @@ function endGame(g) {
         }
       }
 
-      // ── 0.1% chance: "Alien Invaders" (lifetime once, survives reset) ──
+      // ── 0.1% chance: "1 in 1000 Player" (lifetime once, survives reset) ──
       if (!state.oddsTriggered && Math.random() < 0.001) {
         state.oddsTriggered = true;
         if (!state.ownedEmojis.includes('👾')) state.ownedEmojis.push('👾');
-        setTimeout(() => toast('👾 Alien Invaders — hidden challenge unlocked!', { reward: true }), 1700);
+        setTimeout(() => toast('👾 1 in 1000 Player — hidden challenge unlocked!', { reward: true }), 1700);
         if (navigator.vibrate) navigator.vibrate([40, 60, 40, 60, 100]);
       }
 
@@ -747,7 +747,7 @@ function endGame(g) {
         if (!state.ownedEmojis.includes('🔖')) state.ownedEmojis.push('🔖');
         // Secret reset re-enable (no UI announcement)
         state.hasReset = false;
-        setTimeout(() => toast('🔖 +Aura — -1000 tokens. RIP.', { reward: true }), 1900);
+        setTimeout(() => toast('🔖 +aura — -1000 tokens. RIP.', { reward: true }), 1900);
         if (navigator.vibrate) navigator.vibrate([100, 80, 100, 80, 200]);
       }
     } else if (draw) {
@@ -1656,7 +1656,7 @@ const CHALLENGE_DEFS = [
     id: 'shop_clicks_100',
     emoji: '🧇',
     name: 'Finally Served',
-    desc: 'Open the shop 100 times.',
+    desc: 'Sooo.. you wanted to shop?',
     bonusTokens: 100,                                 // extra tokens granted alongside the emoji
     hidden: true,                                     // not shown in list until unlocked
     unlockFlag: () => !!state.shopClicksUnlocked,     // becomes true 3s after threshold
@@ -1672,21 +1672,21 @@ const CHALLENGE_DEFS = [
     unlockFlag: () => !!state.lightyearsAchieved,
     progress: () => [{ current: state.lightyearsAchieved ? 1 : 0, goal: 1, label: state.lightyearsAchieved ? 'achieved' : 'not yet achieved' }],
   },
-  // 🔖 +Aura — hidden, triggers on 0.001% PvP win RNG
+  // 🔖 +aura — hidden, triggers on 0.001% PvP win RNG
   {
     id: 'broken_feature',
     emoji: '🔖',
-    name: '+Aura',
+    name: '+aura',
     desc: 'Luckiest item in the game, reset and go flex the ladder from the begining',
     hidden: true,
     unlockFlag: () => !!state.brokenFeatureTriggered,
     progress: () => [{ current: state.brokenFeatureTriggered ? 1 : 0, goal: 1, label: state.brokenFeatureTriggered ? 'glitch experienced' : '???' }],
   },
-  // 👾 Alien Invaders — hidden, triggers on 0.1% PvP-win RNG (lifetime once)
+  // 👾 1 in a 1000 Player — hidden, triggers on 0.1% PvP-win RNG (lifetime once)
   {
     id: 'gm_50wr',  // legacy id retained so existing claimedChallenges arrays remain valid
     emoji: '👾',
-    name: 'Alien Invaders',
+    name: '1 in a 1000 Player',
     desc: 'You hit a 1-in-1000 PvP win drop.',
     hidden: true,
     unlockFlag: () => !!state.oddsTriggered,
@@ -1697,7 +1697,7 @@ const CHALLENGE_DEFS = [
     id: 'gm_70wr',  // legacy id retained so existing claimedChallenges arrays remain valid
     emoji: '🃏',
     name: 'Skill Based',
-    desc: 'Reach Grandmaster (1850+ ELO) with at least 60% win rate.',
+    desc: 'Reach Grandmaster tier with at least 60% win rate.',
     hidden: true,
     unlockFlag: () => {
       const elo = state.elo || 0;
@@ -1737,7 +1737,7 @@ const CHALLENGE_DEFS = [
     id: 'low_200',
     emoji: '🪼',
     name: 'Deep Reverse Ladder',
-    desc: 'Drop to 200 ELO or below. The abyss stares back.',
+    desc: 'Close to the abyss',
     hidden: true,
     unlockFlag: () => (state.lowestElo !== undefined ? state.lowestElo : 1000) <= 200,
     progress: () => {
