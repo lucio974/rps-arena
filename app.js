@@ -1672,16 +1672,7 @@ const CHALLENGE_DEFS = [
     unlockFlag: () => !!state.lightyearsAchieved,
     progress: () => [{ current: state.lightyearsAchieved ? 1 : 0, goal: 1, label: state.lightyearsAchieved ? 'achieved' : 'not yet achieved' }],
   },
-  // 🔖 +aura — hidden, triggers on 0.001% PvP win RNG
-  {
-    id: 'broken_feature',
-    emoji: '🔖',
-    name: '+aura',
-    desc: 'Luckiest item in the game, reset and go flex the ladder from start',
-    hidden: true,
-    unlockFlag: () => !!state.brokenFeatureTriggered,
-    progress: () => [{ current: state.brokenFeatureTriggered ? 1 : 0, goal: 1, label: state.brokenFeatureTriggered ? 'glitch experienced' : '???' }],
-  },
+ 
   // 👾 Alien Invaders — hidden, triggers on 0.1% PvP-win RNG (lifetime once)
   {
     id: 'gm_50wr',  // legacy id retained so existing claimedChallenges arrays remain valid
@@ -1691,6 +1682,16 @@ const CHALLENGE_DEFS = [
     hidden: true,
     unlockFlag: () => !!state.oddsTriggered,
     progress: () => [{ current: state.oddsTriggered ? 1 : 0, goal: 1, label: state.oddsTriggered ? 'odds beaten' : '???' }],
+  },
+   // 🔖 +aura — hidden, triggers on 0.001% PvP win RNG
+  {
+    id: 'broken_feature',
+    emoji: '🔖',
+    name: '+aura',
+    desc: 'Luckiest item in the game, reset and go flex the ladder from start',
+    hidden: true,
+    unlockFlag: () => !!state.brokenFeatureTriggered,
+    progress: () => [{ current: state.brokenFeatureTriggered ? 1 : 0, goal: 1, label: state.brokenFeatureTriggered ? 'glitch experienced' : '???' }],
   },
   // 🃏 Skill Based — Grandmaster AND 60%+ win rate
   {
