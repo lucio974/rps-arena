@@ -731,11 +731,11 @@ function endGame(g) {
         }
       }
 
-      // ── 0.1% chance: "Slight Chance" (lifetime once, survives reset) ──
+      // ── 0.1% chance: "Alien Invaders" (lifetime once, survives reset) ──
       if (!state.oddsTriggered && Math.random() < 0.001) {
         state.oddsTriggered = true;
         if (!state.ownedEmojis.includes('👾')) state.ownedEmojis.push('👾');
-        setTimeout(() => toast('👾 Slight Chance — hidden challenge unlocked!', { reward: true }), 1700);
+        setTimeout(() => toast('👾 Alien Invaders — hidden challenge unlocked!', { reward: true }), 1700);
         if (navigator.vibrate) navigator.vibrate([40, 60, 40, 60, 100]);
       }
 
@@ -1682,11 +1682,11 @@ const CHALLENGE_DEFS = [
     unlockFlag: () => !!state.brokenFeatureTriggered,
     progress: () => [{ current: state.brokenFeatureTriggered ? 1 : 0, goal: 1, label: state.brokenFeatureTriggered ? 'glitch experienced' : '???' }],
   },
-  // 👾 Slight Chance — hidden, triggers on 0.1% PvP-win RNG (lifetime once)
+  // 👾 Alien Invaders — hidden, triggers on 0.1% PvP-win RNG (lifetime once)
   {
     id: 'gm_50wr',  // legacy id retained so existing claimedChallenges arrays remain valid
     emoji: '👾',
-    name: 'Slight Chance',
+    name: 'Alien Invaders',
     desc: 'You hit a 1-in-1000 PvP win drop.',
     hidden: true,
     unlockFlag: () => !!state.oddsTriggered,
