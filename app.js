@@ -1723,7 +1723,7 @@ const CHALLENGE_DEFS = [
     id: 'low_900',
     emoji: '🐣',
     name: "There's a Strat?",
-    desc: 'Drop to 900 ELO or below. (Yes, there is a strat.)',
+    desc: 'Guessing me again?',
     hidden: true,
     unlockFlag: () => (state.lowestElo !== undefined ? state.lowestElo : 1000) <= 900,
     progress: () => {
