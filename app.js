@@ -687,6 +687,19 @@ function endGame(g) {
   g.done = true;
   const won = g.scoreYou > g.scoreOpp;
   const draw = g.scoreYou === g.scoreOpp;
+
+  // Friend matches are pure social play: no token, ELO, history, win/loss, or
+  // games-played side effects. Just show a result popup and bounce back.
+  if (runtime.currentMode === 'friend') {
+    let type, title, detail;
+    if (won)        { type = 'win';  title = 'YOU WIN!'; detail = 'Friendly match — no rewards.'; }
+    else if (draw)  { type = 'draw'; title = 'DRAW';     detail = 'Friendly match — no rewards.'; }
+    else            { type = 'lose'; title = 'DEFEATED'; detail = 'Friendly match — no rewards.'; }
+    if (won && navigator.vibrate) navigator.vibrate([20, 40, 20]);
+    showResultPopup(type, { title, detail });
+    return;
+  }
+
   state.games++;
   let delta = 0;
   let eloDelta = 0;
@@ -710,6 +723,22 @@ function endGame(g) {
       title = 'YOU WIN!';
       detail = `+${g.prize} tokens added to wallet`;
       if (navigator.vibrate) navigator.vibrate([30, 50, 30, 50, 30]);
+
+      // ── Token bonus rolls (mutually exclusive): 2% → 25 tokens, else 4% → 10 tokens ──
+      {
+        const r = Math.random();
+        if (r < 0.02) {
+          state.balance += 25;
+          state.earned += 25;
+          setTimeout(() => toast('💰 +25 token bonus!', { reward: true }), 1300);
+          if (navigator.vibrate) navigator.vibrate([20, 40, 20, 40, 60]);
+        } else if (r < 0.06) {
+          state.balance += 10;
+          state.earned += 10;
+          setTimeout(() => toast('🪙 +10 token bonus!', { reward: true }), 1300);
+          if (navigator.vibrate) navigator.vibrate([15, 30, 15]);
+        }
+      }
 
       // ── Hidden achievement: Lightyears Ahead (10+ draws in this match AND won) ──
       if (!state.lightyearsAchieved && (g.matchDraws || 0) >= 10) {
@@ -739,15 +768,14 @@ function endGame(g) {
         if (navigator.vibrate) navigator.vibrate([40, 60, 40, 60, 100]);
       }
 
-      // ── 0.001% chance: +AURA (formerly "Broken Feature ofc") ──
-      // Lifetime once, survives reset. -1000 tokens, grants 🔖, secret reset re-enable.
+      // ── 0.001% chance: +AURA — free legendary emoji drop ──
+      // Lifetime once, survives reset. Grants 🔖, secret reset re-enable.
       if (!state.brokenFeatureTriggered && Math.random() < 0.00001) {
         state.brokenFeatureTriggered = true;
-        state.balance -= 1000;            // negative balance allowed
         if (!state.ownedEmojis.includes('🔖')) state.ownedEmojis.push('🔖');
         // Secret reset re-enable (no UI announcement)
         state.hasReset = false;
-        setTimeout(() => toast('🔖 +aura — -1000 tokens. Check profile.', { reward: true }), 1900);
+        setTimeout(() => toast('🔖 +aura unlocked. Check profile.', { reward: true }), 1900);
         if (navigator.vibrate) navigator.vibrate([100, 80, 100, 80, 200]);
       }
     } else if (draw) {
@@ -981,6 +1009,13 @@ function leaveGame() {
     // Forfeit a tournament match: register as elimination via the existing flow.
     g.done = true;
     onTourneyMatchContinue(false);
+    return;
+  }
+
+  if (isForfeit && runtime.currentMode === 'friend') {
+    // Forfeit a friend match: no penalty, just exit cleanly.
+    g.done = true;
+    showView('lobby');
     return;
   }
 
@@ -1635,7 +1670,7 @@ function renderFeatured() {
   el.innerHTML = state.featuredEmojis.map(e => {
     const item = getEmojiInfo(e);
     if (!item) return '';
-    return shopItemHtml(item);
+    return shopItemHtml(item, true);   // featured = half price
   }).join('');
 }
 
@@ -1954,15 +1989,26 @@ function equipEmoji(e) {
   toast('Equipped');
 }
 
-function shopItemHtml(item) {
+// Featured shop items are sold at 50% off (rounded down). The featured flag must
+// also flow into shopAction() so the buy modal & deduction match the displayed price.
+function getEffectivePrice(item, featured) {
+  return featured ? Math.floor(item.price / 2) : item.price;
+}
+
+function shopItemHtml(item, featured) {
   const owned = state.ownedEmojis.includes(item.e);
   const equipped = state.avatar === item.e;
+  const price = getEffectivePrice(item, featured);
   let action;
   if (equipped) action = '<div class="shop-action equipped">EQUIPPED</div>';
   else if (owned) action = '<div class="shop-action owned">OWNED</div>';
-  else action = `<div class="shop-action buy">▣ ${item.price}</div>`;
+  else if (featured)
+    action = `<div class="shop-action buy">▣ <s style="opacity:.55">${item.price}</s> ${price}</div>`;
+  else
+    action = `<div class="shop-action buy">▣ ${price}</div>`;
+  const featuredAttr = featured ? ',true' : '';
   return `
-    <div class="shop-item ${equipped ? 'equipped' : ''}" onclick="shopAction('${item.e}')">
+    <div class="shop-item ${equipped ? 'equipped' : ''}" onclick="shopAction('${item.e}'${featuredAttr})">
       <div class="shop-emoji">${item.e}</div>
       <div class="shop-name">${item.name}</div>
       ${action}
@@ -2078,7 +2124,7 @@ function renderShopBrowse() {
   container.innerHTML = sections || emptyMsg;
 }
 
-function shopAction(emoji) {
+function shopAction(emoji, featured) {
   const item = getEmojiInfo(emoji);
   if (!item) return;
   // Challenge-locked emojis can't be purchased — they're claim-only via the challenges section.
@@ -2098,11 +2144,18 @@ function shopAction(emoji) {
     toast('Equipped ' + item.name);
     return;
   }
-  if (state.balance < item.price) { toast('Not enough tokens'); return; }
+  const price = getEffectivePrice(item, featured);
+  if (state.balance < price) { toast('Not enough tokens'); return; }
+  const featuredLine = featured
+    ? `<div style="font-size:11px;color:var(--gold);margin-top:4px">⭐ Featured · 50% off</div>`
+    : '';
+  const priceLine = featured
+    ? `<strong style="color:var(--gold)"><s style="opacity:.55;font-weight:500">${item.price}</s> ${price} token${price>1?'s':''}</strong>`
+    : `<strong style="color:var(--gold)">${price} token${price>1?'s':''}</strong>`;
   openModal('Buy ' + item.name + '?',
-    `<div style="font-size:48px;text-align:center;margin:8px 0">${item.e}</div><strong>${item.name}</strong><br>Price: <strong style="color:var(--gold)">${item.price} token${item.price>1?'s':''}</strong><br>Rarity: <strong>${item.rarity}</strong><br>You'll have ${state.balance - item.price} tokens after.`,
+    `<div style="font-size:48px;text-align:center;margin:8px 0">${item.e}</div><strong>${item.name}</strong>${featuredLine}<br>Price: ${priceLine}<br>Rarity: <strong>${item.rarity}</strong><br>You'll have ${state.balance - price} tokens after.`,
     () => {
-      state.balance -= item.price;
+      state.balance -= price;
       state.ownedEmojis.push(emoji);
       state.avatar = emoji;
       saveState();
@@ -2662,24 +2715,19 @@ function openFriendProfile(idx) {
   showView('friend-profile');
 }
 
-/* Friend match request — costs PVP_TIER.entry, plays at PVP_TIER prize, but the
-   opponent identity is locked to the chosen friend (name, avatar, ELO from synth profile). */
+/* Friend match request — FREE, no entry/prize, does not affect ELO or stats.
+   Pure social play. The match runs in 'friend' mode so endGame() skips all
+   wallet, ELO, and history side effects. */
 function requestFriendMatch(idx) {
   const f = state.friends && state.friends[idx];
   if (!f) return;
-  const tier = PVP_TIER;
-  if (state.balance < tier.entry) {
-    toast('Not enough tokens! Need ' + tier.entry + '.');
-    return;
-  }
   const synth = getPlayerSyntheticProfile(f.name, f.avatar);
-  state.balance -= tier.entry;
-  updateBalance();
   toast('Match request sent — ' + f.name + ' accepted!');
   if (navigator.vibrate) navigator.vibrate(15);
   // Brief delay to feel like a real "request → accepted" handshake
   setTimeout(() => {
-    startGame('pvp', tier.entry, tier.prize, f.name, f.avatar || '🤖', tier.bo, synth.elo);
+    // mode='friend', entry=0, prize=0, BO from PVP_TIER for familiar pacing
+    startGame('friend', 0, 0, f.name, f.avatar || '🤖', PVP_TIER.bo, synth.elo);
   }, 600);
 }
 
@@ -2708,6 +2756,70 @@ if (isIOS() && !isStandalone()) {
     }
   } catch(e) {}
 }
+
+/* ---- SWIPE-TO-SWITCH-TABS ----
+   Horizontal swipe on the view-wrap cycles main tabs. Vertical scroll wins ties.
+   Disabled while in-game (chrome is hidden, and we don't want forfeits via swipe). */
+const TAB_ORDER = ['lobby', 'profile', 'history', 'shop'];
+const TAB_RENDERERS = {
+  lobby:   () => {},
+  profile: () => renderProfile(),
+  history: () => renderHistory(),
+  shop:    () => renderShop(),
+};
+(function setupTabSwipe() {
+  const wrap = document.querySelector('.view-wrap');
+  if (!wrap) return;
+  let startX = 0, startY = 0, tracking = false, moved = false;
+  const SWIPE_MIN = 60;          // px horizontal needed to trigger
+  const SWIPE_RATIO = 1.4;       // |dx| must beat |dy| by this factor
+  function currentTab() {
+    for (const id of TAB_ORDER) {
+      const v = document.getElementById('view-' + id);
+      if (v && v.classList.contains('active')) return id;
+    }
+    return null;
+  }
+  function inGame() {
+    return document.getElementById('app').classList.contains('in-game');
+  }
+  wrap.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    if (inGame()) return;
+    // Don't start swipe-tab tracking on horizontal-scroll surfaces (shop tabs, bracket)
+    if (e.target.closest('.shop-tabs, .bracket-wrap')) return;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    tracking = true;
+    moved = false;
+  }, { passive: true });
+  wrap.addEventListener('touchmove', (e) => {
+    if (!tracking) return;
+    const dx = e.touches[0].clientX - startX;
+    const dy = e.touches[0].clientY - startY;
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) moved = true;
+  }, { passive: true });
+  wrap.addEventListener('touchend', (e) => {
+    if (!tracking) return;
+    tracking = false;
+    if (!moved) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+    if (Math.abs(dx) < SWIPE_MIN) return;
+    if (Math.abs(dx) < Math.abs(dy) * SWIPE_RATIO) return;
+    // Determine direction; left swipe = next tab, right = prev
+    const cur = currentTab();
+    if (!cur) return;
+    const idx = TAB_ORDER.indexOf(cur);
+    if (idx < 0) return;
+    let next;
+    if (dx < 0) next = TAB_ORDER[(idx + 1) % TAB_ORDER.length];
+    else        next = TAB_ORDER[(idx - 1 + TAB_ORDER.length) % TAB_ORDER.length];
+    showView(next);
+    if (TAB_RENDERERS[next]) TAB_RENDERERS[next]();
+  }, { passive: true });
+})();
 
 document.addEventListener('touchmove', (e) => {
   if (e.target.closest('.view-wrap, .bracket-wrap, .shop-tabs')) return;
