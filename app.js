@@ -575,14 +575,17 @@ function play(choice) {
   const emojis = SIGNS;
   const oppChoice = rps();
 
-  // Track picks for this match (visual history) and globally (profile stats)
+  // Track picks for this match (visual history) and globally (profile stats).
+  // Friendly matches don't pollute profile stats or challenge progress.
   if (!g.youPicks) g.youPicks = [];
   if (!g.oppPicks) g.oppPicks = [];
   g.youPicks.push(choice);
   g.oppPicks.push(oppChoice);
-  if (choice === 'rock')     state.pickRock = (state.pickRock || 0) + 1;
-  if (choice === 'paper')    state.pickPaper = (state.pickPaper || 0) + 1;
-  if (choice === 'scissors') state.pickScissors = (state.pickScissors || 0) + 1;
+  if (runtime.currentMode !== 'friend') {
+    if (choice === 'rock')     state.pickRock = (state.pickRock || 0) + 1;
+    if (choice === 'paper')    state.pickPaper = (state.pickPaper || 0) + 1;
+    if (choice === 'scissors') state.pickScissors = (state.pickScissors || 0) + 1;
+  }
 
   const youEl = document.getElementById('choice-you');
   const oppEl = document.getElementById('choice-opp');
@@ -597,8 +600,10 @@ function play(choice) {
     let outcome; // 'W' | 'L' | 'D'
     if (choice === oppChoice) {
       rr.textContent = 'DRAW'; rr.className = 'choice-result draw'; outcome = 'D';
-      // Round-level draw counter (used by What a Read challenge)
-      state.drawRounds = (state.drawRounds || 0) + 1;
+      // Round-level draw counter (used by What a Read challenge) — friendly matches skip stats
+      if (runtime.currentMode !== 'friend') {
+        state.drawRounds = (state.drawRounds || 0) + 1;
+      }
       // Per-match draw count (used by Lightyears Ahead hidden achievement)
       g.matchDraws = (g.matchDraws || 0) + 1;
     }
@@ -1989,10 +1994,14 @@ function equipEmoji(e) {
   toast('Equipped');
 }
 
-// Featured shop items are sold at 50% off (rounded down). The featured flag must
-// also flow into shopAction() so the buy modal & deduction match the displayed price.
+// Featured shop items are sold at a discount. Rare emojis get a flat 10-token
+// price (overriding the 50% calc); other rarities are half-off, floor-rounded.
+// Pricing tiers in catalog: common=10, rare=25, epic=60, legendary=150
+//   → featured: common=5, rare=10, epic=30, legendary=75
 function getEffectivePrice(item, featured) {
-  return featured ? Math.floor(item.price / 2) : item.price;
+  if (!featured) return item.price;
+  if (item.rarity === 'rare') return 10;       // special override
+  return Math.floor(item.price / 2);
 }
 
 function shopItemHtml(item, featured) {
@@ -2002,10 +2011,7 @@ function shopItemHtml(item, featured) {
   let action;
   if (equipped) action = '<div class="shop-action equipped">EQUIPPED</div>';
   else if (owned) action = '<div class="shop-action owned">OWNED</div>';
-  else if (featured)
-    action = `<div class="shop-action buy">▣ <s style="opacity:.55">${item.price}</s> ${price}</div>`;
-  else
-    action = `<div class="shop-action buy">▣ ${price}</div>`;
+  else action = `<div class="shop-action buy">▣ ${price}</div>`;
   const featuredAttr = featured ? ',true' : '';
   return `
     <div class="shop-item ${equipped ? 'equipped' : ''}" onclick="shopAction('${item.e}'${featuredAttr})">
@@ -2032,13 +2038,41 @@ function getChallengeLockedEmojis() {
   return set;
 }
 
-// Lookup table of challenge emojis -> their challenge def (for name + forced rarity).
-// Only emoji-reward challenges produce overrides; token-reward icons stay catalog-resolved.
+// Unicode-style names for challenge emojis that aren't in the regular catalog.
+// Used when displaying owned challenge emojis in the shop, equip toasts, etc.
+// The Secret Challenges section uses the challenge's `name` field directly and
+// is unaffected by this map.
+const CHALLENGE_EMOJI_NAMES = {
+  '🧬': 'DNA',
+  '🧇': 'Waffle',
+  '🛸': 'UFO',
+  '🃏': 'Joker',
+  '🐣': 'Hatching Chick',
+  '🪼': 'Jellyfish',
+  '🩻': 'X-Ray',
+  '🤓': 'Nerd Face',
+  '🧠': 'Brain',
+  '🪤': 'Mousetrap',
+  '🔖': 'Bookmark',
+  '🥀': 'Wilted Flower',
+  '🪕': 'Banjo',
+  '✂️': 'Scissors',
+  '👽': 'Alien',
+  '👾': 'Space Invader',
+  '🗿': 'Moai',
+};
+
+// Lookup table of challenge emojis -> their display record (real emoji name,
+// forced legendary rarity). Only emoji-reward challenges produce overrides;
+// token-reward icons stay catalog-resolved.
 function getChallengeEmojiOverrides() {
   const map = {};
   for (const c of CHALLENGE_DEFS) {
     if (c.rewardType === 'tokens') continue;
-    map[c.emoji] = { e: c.emoji, name: c.name, cat: 'challenge', price: 0, rarity: 'legendary' };
+    const catalogEntry = EMOJI_CATALOG.find(x => x.e === c.emoji);
+    // Prefer catalog name, then the curated challenge-emoji name table, then fall back to challenge name.
+    const displayName = (catalogEntry && catalogEntry.name) || CHALLENGE_EMOJI_NAMES[c.emoji] || c.name;
+    map[c.emoji] = { e: c.emoji, name: displayName, cat: 'challenge', price: 0, rarity: 'legendary' };
   }
   return map;
 }
@@ -2146,14 +2180,9 @@ function shopAction(emoji, featured) {
   }
   const price = getEffectivePrice(item, featured);
   if (state.balance < price) { toast('Not enough tokens'); return; }
-  const featuredLine = featured
-    ? `<div style="font-size:11px;color:var(--gold);margin-top:4px">⭐ Featured · 50% off</div>`
-    : '';
-  const priceLine = featured
-    ? `<strong style="color:var(--gold)"><s style="opacity:.55;font-weight:500">${item.price}</s> ${price} token${price>1?'s':''}</strong>`
-    : `<strong style="color:var(--gold)">${price} token${price>1?'s':''}</strong>`;
+  const priceLine = `<strong style="color:var(--gold)">${price} token${price>1?'s':''}</strong>`;
   openModal('Buy ' + item.name + '?',
-    `<div style="font-size:48px;text-align:center;margin:8px 0">${item.e}</div><strong>${item.name}</strong>${featuredLine}<br>Price: ${priceLine}<br>Rarity: <strong>${item.rarity}</strong><br>You'll have ${state.balance - price} tokens after.`,
+    `<div style="font-size:48px;text-align:center;margin:8px 0">${item.e}</div><strong>${item.name}</strong><br>Price: ${priceLine}<br>Rarity: <strong>${item.rarity}</strong><br>You'll have ${state.balance - price} tokens after.`,
     () => {
       state.balance -= price;
       state.ownedEmojis.push(emoji);
