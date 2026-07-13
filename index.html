@@ -42,8 +42,9 @@
 
   /* Header uses the same diagonal gold→blue tint as the Daily Featured shop card,
      so the brand bar reads as a "featured" surface. No radial glow, no per-child
-     z-index lift — children sit flush against the gradient. */
-  .header{background:linear-gradient(135deg,rgba(var(--gold-rgb),.1),rgba(79,142,247,.05));border-bottom:1px solid var(--border);
+     z-index lift — children sit flush against the gradient. Opacity roughly
+     doubled vs. the featured card so the bar reads clearly at a glance. */
+  .header{background:linear-gradient(135deg,rgba(var(--gold-rgb),.22),rgba(79,142,247,.13));border-bottom:1px solid var(--border);
     padding:14px 18px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:10px;position:relative}
   .header::after{content:'';position:absolute;left:0;right:0;bottom:0;height:1px;background:linear-gradient(90deg,transparent,rgba(var(--gold-rgb),.3),transparent);pointer-events:none}
   .logo-wrap{display:flex;align-items:center;gap:10px;cursor:pointer;flex:1;min-width:0}
@@ -919,6 +920,10 @@
     <div class="hpm-section-title">Stats</div>
     <div class="profile-stats" id="hpm-stats"></div>
     <div id="hpm-last" class="hpm-last"></div>
+    <div id="hpm-rounds-wrap" style="display:none">
+      <div class="hpm-section-title">Round-by-Round</div>
+      <div class="pick-history" id="hpm-rounds"></div>
+    </div>
     <div class="hpm-btns">
       <button class="btn-cancel hpm-btn" onclick="closeHistoryPlayerModal()">Close</button>
       <button class="btn-confirm hpm-btn" id="hpm-add-btn" onclick="addFriendFromHistoryModal()">Add Friend</button>

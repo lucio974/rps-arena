@@ -634,13 +634,14 @@ function play(choice) {
 }
 
 // Render a small row showing past picks for this match (per side, dimmed by outcome).
-function renderPickHistory(g) {
-  const wrap = document.getElementById('pick-history');
-  if (!wrap) return;
+// Shared renderer: builds the "You / Opponent" pick-row HTML from raw pick +
+// outcome arrays. Used by the live in-match pick-history widget AND the
+// history-tab "Round-by-Round" modal section (static, post-match).
+function buildPickHistoryHtml(youPicks, oppPicks, outcomes, oppLabel) {
   const emojis = SIGNS;
-  const youPicks = g.youPicks || [];
-  const oppPicks = g.oppPicks || [];
-  const outcomes = g.outcomes || [];
+  youPicks = youPicks || [];
+  oppPicks = oppPicks || [];
+  outcomes = outcomes || [];
   // outcomes[i] is YOUR result in round i (W/L/D). For your row, color by outcome;
   // for opponent row, flip (your W = their L).
   const you = youPicks.map((p, i) => {
@@ -654,10 +655,16 @@ function renderPickHistory(g) {
     const cls = flipped === 'W' ? 'win' : flipped === 'L' ? 'lose' : flipped === 'D' ? 'draw' : '';
     return `<span class="pick-cell ${cls}" title="Round ${i+1}">${emojis[p] || '?'}</span>`;
   }).join('');
-  wrap.innerHTML = `
+  return `
     <div class="pick-row" aria-label="Your past picks"><span class="pick-row-label">You</span><div class="pick-row-cells">${you}</div></div>
-    <div class="pick-row" aria-label="Opponent past picks"><span class="pick-row-label">${(g.opp || 'Opp').slice(0,10)}</span><div class="pick-row-cells">${opp}</div></div>
+    <div class="pick-row" aria-label="Opponent past picks"><span class="pick-row-label">${(oppLabel || 'Opp').slice(0,10)}</span><div class="pick-row-cells">${opp}</div></div>
   `;
+}
+
+function renderPickHistory(g) {
+  const wrap = document.getElementById('pick-history');
+  if (!wrap) return;
+  wrap.innerHTML = buildPickHistoryHtml(g.youPicks, g.oppPicks, g.outcomes, g.opp);
 }
 
 function calculateEloChange(playerElo, oppElo, won, draw) {
@@ -807,6 +814,7 @@ function endGame(g) {
       score: g.scoreYou + '-' + g.scoreOpp,
       eloDelta, mode: 'PvP',
       youElo: state.elo, oppElo: g.oppElo,
+      youPicks: g.youPicks || [], oppPicks: g.oppPicks || [], outcomes: g.outcomes || [],
       time: new Date().toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
     });
     if (state.history.length > 100) state.history = state.history.slice(0, 100);
@@ -844,6 +852,7 @@ function endGame(g) {
         result: won ? 'W' : 'L',
         score: g.scoreYou + '-' + g.scoreOpp,
         eloDelta: 0, mode: 'Tourney',
+        youPicks: g.youPicks || [], oppPicks: g.oppPicks || [], outcomes: g.outcomes || [],
         time: new Date().toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
       });
       if (state.history.length > 100) state.history = state.history.slice(0, 100);
@@ -998,6 +1007,7 @@ function leaveGame() {
       score: 'Forfeit',
       eloDelta, mode: 'PvP',
       youElo: state.elo, oppElo: g.oppElo,
+      youPicks: g.youPicks || [], oppPicks: g.oppPicks || [], outcomes: g.outcomes || [],
       time: new Date().toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
     });
     if (state.history.length > 100) state.history = state.history.slice(0, 100);
@@ -2486,6 +2496,11 @@ function showHistoryPlayerModal(name, avatar) {
     <div class="pstat"><div class="pstat-label">Total Games</div><div class="pstat-val">${synth.games}</div></div>
   `;
   document.getElementById('hpm-last').innerHTML = '';
+  // Round-by-round only applies when opened from a specific history row (see
+  // openPlayerProfile). Reset/hide it here so generic opponent lookups
+  // (tournament bracket taps, leaderboard taps) never show stale data.
+  document.getElementById('hpm-rounds-wrap').style.display = 'none';
+  document.getElementById('hpm-rounds').innerHTML = '';
 
   const addBtn = document.getElementById('hpm-add-btn');
   const isFriend = (state.friends || []).some(f => f.name === name);
@@ -2507,6 +2522,26 @@ function openPlayerProfile(historyIdx) {
   // Append last-match line (history-specific context)
   document.getElementById('hpm-last').innerHTML =
     `<strong style="color:var(--text)">Last:</strong> ${h.mode} · ${h.score} · ${h.time}`;
+
+  // Round-by-round breakdown — only available for PvP/Tourney entries saved
+  // after this feature shipped (older entries won't have youPicks/oppPicks).
+  // Streak entries summarize a whole multi-match run, so no single set of
+  // rounds applies there — skip them entirely.
+  const roundsWrap = document.getElementById('hpm-rounds-wrap');
+  const roundsEl = document.getElementById('hpm-rounds');
+  if (h.mode === 'Streak') {
+    roundsWrap.style.display = 'none';
+  } else if (Array.isArray(h.youPicks) && h.youPicks.length > 0) {
+    roundsWrap.style.display = 'block';
+    roundsEl.innerHTML = buildPickHistoryHtml(h.youPicks, h.oppPicks, h.outcomes, h.opp);
+  } else if (Array.isArray(h.youPicks) && h.youPicks.length === 0 && h.score === 'Forfeit') {
+    roundsWrap.style.display = 'block';
+    roundsEl.innerHTML = '<div class="empty-state" style="padding:14px 0">No rounds played — forfeited immediately.</div>';
+  } else {
+    // Older entry saved before round tracking existed — no data to show.
+    roundsWrap.style.display = 'block';
+    roundsEl.innerHTML = '<div class="empty-state" style="padding:14px 0">No round data available for this match.</div>';
+  }
 }
 
 // Open the same window for a tournament opponent (by name only — generate avatar deterministically).
