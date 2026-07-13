@@ -549,38 +549,6 @@
     .rotate-lock{display:flex}
     #app{display:none}
   }
-
-  /* AUTH SCREEN
-     Full-screen gate shown when signed out. Sits above #app (which starts
-     hidden by inline style, toggled from multiplayer.js's auth state
-     listener) and below the rotate-lock overlay in z-index terms — being
-     signed out in landscape still shows the rotate notice first. */
-  .auth-screen{display:none;position:fixed;inset:0;z-index:500;background:var(--bg);
-    align-items:center;justify-content:center;padding:24px;padding-top:calc(24px + var(--safe-top));
-    padding-bottom:calc(24px + var(--safe-bot))}
-  .auth-card{width:100%;max-width:340px;display:flex;flex-direction:column;gap:16px}
-  .auth-logo{text-align:center;margin-bottom:4px}
-  .auth-logo-title{font-family:'Bebas Neue',sans-serif;font-size:36px;letter-spacing:.08em;color:var(--gold);font-weight:700}
-  .auth-logo-sub{font-size:12px;color:var(--muted);letter-spacing:.04em;margin-top:2px}
-  .auth-tabs{display:flex;background:var(--surface2);border-radius:10px;padding:4px;gap:4px}
-  .auth-tab{flex:1;background:none;border:none;color:var(--muted);padding:10px;border-radius:7px;
-    font-size:13px;font-weight:700;letter-spacing:.03em;cursor:pointer;font-family:inherit}
-  .auth-tab.active{background:var(--gold);color:#000}
-  .auth-fields{display:flex;flex-direction:column;gap:10px}
-  .auth-error{display:none;background:rgba(226,75,74,.12);border:1px solid var(--danger);color:var(--danger);
-    border-radius:8px;padding:9px 12px;font-size:12px;line-height:1.4}
-  .auth-submit-btn{background:var(--gold);color:#000;border:none;border-radius:10px;padding:13px;
-    font-size:14px;font-weight:700;cursor:pointer;letter-spacing:.03em;-webkit-user-select:none}
-  .auth-submit-btn:active:not(:disabled){transform:scale(.98)}
-  .auth-submit-btn:disabled{opacity:.5;cursor:not-allowed}
-  .auth-divider{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:11px;letter-spacing:.06em;text-transform:uppercase}
-  .auth-divider::before,.auth-divider::after{content:'';flex:1;height:1px;background:var(--border)}
-  .auth-google-btn{background:var(--surface2);border:1px solid var(--border);color:var(--text);
-    border-radius:10px;padding:12px;font-size:13px;font-weight:600;cursor:pointer;
-    display:flex;align-items:center;justify-content:center;gap:8px;font-family:inherit;-webkit-user-select:none}
-  .auth-google-btn:active:not(:disabled){background:var(--surface3)}
-  .auth-google-btn:disabled{opacity:.5;cursor:not-allowed}
-  .auth-google-icon{font-size:15px;font-weight:700}
 </style>
 </head>
 <body>
@@ -589,35 +557,7 @@
   <div class="rotate-lock-title">Please Rotate</div>
   <div class="rotate-lock-body">RPS Arena is designed for portrait mode. Rotate your device upright to continue.</div>
 </div>
-
-<!-- AUTH SCREEN — shown when signed out. multiplayer.js toggles this vs #app. -->
-<div class="auth-screen" id="auth-screen" style="display:flex">
-  <div class="auth-card">
-    <div class="auth-logo">
-      <div class="auth-logo-title">RPS ARENA</div>
-      <div class="auth-logo-sub">Sign in to play ranked &amp; friend matches</div>
-    </div>
-    <div class="auth-tabs">
-      <button class="auth-tab active" id="auth-tab-signin" onclick="authSetMode('signin')">Sign In</button>
-      <button class="auth-tab" id="auth-tab-signup" onclick="authSetMode('signup')">Sign Up</button>
-    </div>
-    <div class="auth-error" id="auth-error"></div>
-    <div class="auth-fields">
-      <div id="auth-username-row" style="display:none">
-        <input type="text" class="name-input" id="auth-username" maxlength="16" placeholder="Username" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false">
-      </div>
-      <input type="email" class="name-input" id="auth-email" placeholder="Email" autocomplete="email" autocapitalize="off" autocorrect="off" spellcheck="false">
-      <input type="password" class="name-input" id="auth-password" placeholder="Password" autocomplete="current-password">
-    </div>
-    <button class="auth-submit-btn" id="auth-submit-btn" onclick="authSubmit()">Sign In</button>
-    <div class="auth-divider">or</div>
-    <button class="auth-google-btn" id="auth-google-btn" onclick="authSubmitGoogle()">
-      <span class="auth-google-icon">G</span> Continue with Google
-    </button>
-  </div>
-</div>
-
-<div id="app" style="display:none">
+<div id="app">
   <div class="header">
     <div class="logo-wrap" onclick="showView('profile');renderProfile()">
       <div class="header-avatar" id="header-avatar">😀</div>
@@ -890,7 +830,6 @@
 
       <div class="section-title" style="margin-top:6px">Owned Emojis (<span id="ps-collection-count">0</span>)</div>
       <div id="ps-collection"></div>
-      <button id="signout-btn" onclick="signOutUser()" style="margin-top:14px;background:none;border:1px solid var(--border);color:var(--muted);border-radius:10px;padding:11px;cursor:pointer;font-size:13px;font-weight:600">Sign Out</button>
       <button id="reset-btn" onclick="confirmReset()" style="margin-top:8px;background:none;border:1px solid var(--danger);color:var(--danger);border-radius:10px;padding:11px;cursor:pointer;font-size:13px;font-weight:600">Reset all progress (one-time)</button>
     </div>
 
@@ -1098,16 +1037,8 @@
 
 <div class="toast" id="toast"></div>
 
-<!-- Firebase SDK (compat build — works with plain <script> tags, no bundler needed) -->
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
-
 <script src="emoji-catalog.js"></script>
-<script src="firebase-config.js"></script>
 <script src="app.js"></script>
-<script src="multiplayer.js"></script>
 <script>
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
