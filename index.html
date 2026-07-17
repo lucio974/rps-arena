@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="RPS Arena">
+<meta name="theme-color" content="#0d0d12">
+<title>RPS Arena</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  :root{
+    /* Primary brand accent. Default is the original gold; can be overridden by user
+       via Profile theme picker (sets inline --gold/--gold-light/--gold-rgb on :root). */
+    --gold:#c9a84c;--gold-light:#f0d080;--gold-rgb:201,168,76;--bg:#0d0d12;--surface:#16161f;
+    --surface2:#1e1e2a;--surface3:#26263a;--border:#2e2e44;
+    --text:#e8e8f0;--muted:#888;--accent:#4f8ef7;--danger:#e24b4a;
+    --success:#3b9a5a;--win:#c9a84c;--epic:#a96bff;--rare:#4f8ef7;--common:#888;
+    --legendary:#ff9b3d;
+    --safe-top:env(safe-area-inset-top,0px);
+    --safe-bot:env(safe-area-inset-bottom,0px);
+  }
+  html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+  body{background:var(--bg);color:var(--text);font-family:'DM Sans',-apple-system,BlinkMacSystemFont,sans-serif;
+    font-size:15px;-webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none;
+    touch-action:manipulation;position:fixed;width:100%}
+  h1,h2,h3,.disp{font-family:'Bebas Neue',sans-serif;letter-spacing:.05em;font-weight:400}
+  button{font-family:inherit}
+
+  #app{display:flex;flex-direction:column;height:100vh;height:100dvh;
+    padding-top:var(--safe-top);padding-bottom:var(--safe-bot)}
+
+  /* Hide chrome (header + nav) when in game */
+  #app.in-game .header,
+  #app.in-game .nav{display:none}
+
+  /* Header uses the same diagonal gold→blue tint as the Daily Featured shop card,
+     so the brand bar reads as a "featured" surface. No radial glow, no per-child
+     z-index lift — children sit flush against the gradient. Opacity roughly
+     doubled vs. the featured card so the bar reads clearly at a glance. */
+  .header{background:linear-gradient(135deg,rgba(var(--gold-rgb),.22),rgba(79,142,247,.13));border-bottom:1px solid var(--border);
+    padding:14px 18px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:10px;position:relative}
+  .header::after{content:'';position:absolute;left:0;right:0;bottom:0;height:1px;background:linear-gradient(90deg,transparent,rgba(var(--gold-rgb),.3),transparent);pointer-events:none}
+  .logo-wrap{display:flex;align-items:center;gap:10px;cursor:pointer;flex:1;min-width:0}
+  .logo-wrap:active{opacity:.7}
+  .header-avatar{width:36px;height:36px;border-radius:50%;background:transparent;
+    border:1.5px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+  .logo{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.1em;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700}
+  .wallet{display:flex;align-items:center;gap:6px;background:var(--surface2);
+    border:1px solid var(--border);border-radius:10px;padding:7px 10px;font-size:13px;flex-shrink:0}
+  .wallet-amt{font-weight:700;color:var(--gold);font-size:14px}
+  .token-icon{font-size:14px;color:var(--gold);font-weight:900}
+
+  .nav{display:flex;background:var(--surface2);border-bottom:1px solid var(--border);flex-shrink:0}
+  .nav-btn{flex:1;padding:13px 4px;border:none;background:none;color:var(--muted);
+    font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;transition:.2s}
+  .nav-btn.active{color:var(--gold);border-bottom-color:var(--gold)}
+
+  .view-wrap{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .view{display:none;padding:18px;flex-direction:column;gap:16px;min-height:100%}
+  .view.active{display:flex}
+
+  .section-title{font-size:11px;letter-spacing:.12em;color:var(--muted);
+    text-transform:uppercase;margin-bottom:4px;font-weight:600}
+
+  .elo-hero{background:linear-gradient(135deg,var(--surface),var(--surface2));
+    border:1px solid var(--border);border-radius:16px;padding:20px;text-align:center;position:relative;overflow:hidden}
+  .elo-hero::before{content:'';position:absolute;inset:-50%;background:radial-gradient(circle,rgba(var(--gold-rgb),.15) 0%,transparent 60%);pointer-events:none}
+  .elo-rank-tier{font-size:11px;letter-spacing:.16em;font-weight:700;text-transform:uppercase;margin-bottom:6px;color:var(--rank-color,var(--gold))}
+  .elo-rank{font-family:'Bebas Neue',sans-serif;font-size:54px;line-height:1;color:var(--gold);position:relative;font-weight:700}
+  .elo-label{font-size:11px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-top:4px;font-weight:600}
+  .elo-progress{margin-top:14px;height:6px;background:var(--surface3);border-radius:3px;overflow:hidden;position:relative}
+  .elo-progress-fill{height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-light));border-radius:3px;transition:width .5s ease}
+  .elo-progress-labels{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:6px;letter-spacing:.05em}
+
+  .mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .mode-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:16px;cursor:pointer;transition:.15s;position:relative;overflow:hidden;-webkit-user-select:none}
+  .mode-card:active{transform:scale(.97);background:var(--surface2)}
+  .mode-card.featured{border-color:var(--gold)}
+  .mode-icon{font-size:32px;margin-bottom:10px}
+  .mode-name{font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:.05em;margin-bottom:4px;font-weight:700}
+  .mode-desc{font-size:12px;color:var(--muted);line-height:1.4}
+  .mode-entry{margin-top:10px;display:inline-block;background:var(--surface3);
+    border-radius:5px;padding:3px 8px;font-size:11px;font-weight:600;color:var(--gold)}
+  .badge{position:absolute;top:10px;right:10px;background:var(--gold);color:#000;
+    font-size:9px;font-weight:700;letter-spacing:.08em;padding:3px 6px;border-radius:3px}
+
+  /* Single PvP info card (replaces tier grid) */
+  .pvp-info{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;align-items:center;justify-content:space-between;gap:14px}
+  .pvp-info-left{display:flex;flex-direction:column;gap:4px}
+  .pvp-info-label{font-size:10px;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;font-weight:700}
+  .pvp-info-prize{font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--gold);line-height:1;font-weight:700}
+  .pvp-info-entry{font-size:12px;color:var(--muted)}
+  .pvp-info-right{text-align:right;font-size:11px}
+  .pvp-info-elo{font-weight:700;letter-spacing:.05em}
+  .pvp-info-elo .pos{color:var(--success)}
+  .pvp-info-elo .neg{color:var(--danger)}
+
+  .find-btn{background:var(--accent);color:#fff;border:none;border-radius:12px;padding:15px;
+    font-size:15px;font-weight:700;cursor:pointer;transition:.15s;width:100%;-webkit-user-select:none}
+  .find-btn:active{transform:scale(.98);opacity:.85}
+  .find-btn:disabled{opacity:.4}
+
+  .searching-ui{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:30px 20px;text-align:center;display:none}
+  .pulse{width:54px;height:54px;border-radius:50%;border:3px solid var(--accent);
+    border-top-color:transparent;animation:spin 1s linear infinite;margin:0 auto 16px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .game-header{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+  .player-info{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
+  .player-info.right{align-items:flex-end}
+  .player-name-row{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700}
+  .player-name-row .mini-avatar{width:32px;height:32px;border-radius:50%;background:var(--surface3);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+  .player-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;font-weight:700;font-size:15px}
+  .player-elo{font-size:10px;color:var(--muted);letter-spacing:.06em;font-weight:600;margin-top:1px}
+  .player-elo .num{color:var(--gold)}
+  .player-score{font-family:'Bebas Neue',sans-serif;font-size:30px;color:var(--gold);line-height:1;font-weight:700}
+  .vs{font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--muted);font-weight:700}
+  .stake-tag{background:var(--surface3);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--gold);font-weight:600;white-space:nowrap}
+
+  .streak-hud{background:linear-gradient(135deg,rgba(var(--gold-rgb),.15),rgba(79,142,247,.08));
+    border:1px solid var(--gold);border-radius:14px;padding:12px 16px;
+    display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .streak-info{display:flex;flex-direction:column;gap:2px}
+  .streak-label{font-size:10px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;font-weight:600}
+  .streak-val{font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--gold);line-height:1;font-weight:700}
+  .strikes{display:flex;gap:6px}
+  .strike-dot{width:18px;height:18px;border-radius:50%;border:2px solid var(--border);transition:.3s}
+  .strike-dot.filled{background:var(--danger);border-color:var(--danger)}
+
+  /* Game-view exit button (because nav is hidden) */
+  .game-exit-row{display:flex;justify-content:flex-end}
+  .game-exit-btn{background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer}
+  .game-exit-btn:active{background:var(--surface2)}
+
+  .round-info{text-align:center;font-size:12px;color:var(--muted);font-weight:500}
+  .choices-row{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center}
+
+  .pick-dist{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+  .pick-dist-row{display:flex;align-items:center;gap:12px}
+  .pick-dist-icon{font-size:22px;width:30px;text-align:center;flex-shrink:0;line-height:1}
+  .pick-dist-bar{flex:1;height:10px;background:var(--surface3);border-radius:5px;overflow:hidden;position:relative}
+  .pick-dist-fill{height:100%;border-radius:5px;transition:width .5s cubic-bezier(.34,1.56,.64,1)}
+  .pick-dist-row[data-pick="rock"] .pick-dist-fill{background:linear-gradient(90deg,#cd7f32,#e2925c)}
+  .pick-dist-row[data-pick="paper"] .pick-dist-fill{background:linear-gradient(90deg,#7fbab0,#9ddffa)}
+  .pick-dist-row[data-pick="scissors"] .pick-dist-fill{background:linear-gradient(90deg,var(--gold),var(--gold-light))}
+  .pick-dist-num{display:flex;align-items:baseline;gap:6px;min-width:64px;justify-content:flex-end;font-family:'Bebas Neue',sans-serif;font-size:18px;font-weight:700;color:var(--gold);flex-shrink:0}
+  .pd-pct{font-family:'DM Sans',sans-serif;font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.04em}
+
+  /* THEME PICKER */
+  .theme-picker{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px}
+  .theme-swatch{aspect-ratio:1;border-radius:10px;cursor:pointer;border:2.5px solid transparent;display:flex;align-items:flex-end;justify-content:center;padding:5px 4px;-webkit-user-select:none;transition:transform .15s,border-color .15s;position:relative;overflow:hidden}
+  .theme-swatch:active{transform:scale(.94)}
+  .theme-swatch.selected{border-color:var(--text);box-shadow:0 0 0 2px var(--bg) inset}
+  .theme-swatch-label{font-size:9px;font-weight:700;letter-spacing:.04em;color:#000;background:rgba(255,255,255,.85);padding:2px 5px;border-radius:4px;line-height:1;text-transform:uppercase}
+  .theme-custom-row{display:flex;gap:8px;align-items:center;margin-top:8px}
+  .theme-custom-input{width:48px;height:36px;padding:0;border:1px solid var(--border);border-radius:8px;background:var(--surface2);cursor:pointer;flex-shrink:0}
+  .theme-custom-input::-webkit-color-swatch{border:none;border-radius:6px}
+  .theme-custom-input::-moz-color-swatch{border:none;border-radius:6px}
+  .theme-custom-apply{flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:9px 12px;cursor:pointer;font-size:12px;font-weight:600;letter-spacing:.04em;font-family:inherit}
+  .theme-custom-apply:active{background:var(--surface2)}
+
+  /* SECRET CHALLENGES */
+  .secret-challenges{display:flex;flex-direction:column;gap:8px}
+  .secret-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:12px}
+  .secret-card.unlocked{border-color:var(--gold)}
+  .secret-card.claimed{border-color:var(--success);background:rgba(59,154,90,.05)}
+  .secret-card-emoji{font-size:28px;width:42px;height:42px;display:flex;align-items:center;justify-content:center;flex-shrink:0;filter:grayscale(.7) opacity(.55)}
+  .secret-card.unlocked .secret-card-emoji,
+  .secret-card.claimed .secret-card-emoji{filter:none}
+  .secret-info{flex:1;min-width:0}
+  .secret-name{font-weight:700;font-size:13px;line-height:1.2}
+  .secret-card.locked .secret-name{color:var(--muted)}
+  .secret-desc{font-size:11px;color:var(--muted);margin-top:2px;line-height:1.3}
+  .secret-status{font-size:9px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;flex-shrink:0;padding:4px 8px;border-radius:5px}
+  .secret-status.locked{background:var(--surface3);color:var(--muted)}
+  .secret-status.unlocked{background:rgba(var(--gold-rgb),.15);color:var(--gold)}
+  .secret-status.claimed{background:rgba(59,154,90,.15);color:var(--success)}
+  .pick-history{display:flex;flex-direction:column;gap:6px;padding:6px 0}
+  .pick-history:empty{display:none}
+  .pick-row{display:flex;align-items:center;gap:8px}
+  .pick-row-label{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);min-width:40px;text-align:right;flex-shrink:0}
+  .pick-row-cells{display:flex;gap:4px;flex-wrap:wrap;flex:1}
+  .pick-cell{width:24px;height:24px;border-radius:6px;background:var(--surface2);border:1.5px solid var(--border);display:inline-flex;align-items:center;justify-content:center;font-size:14px;line-height:1}
+  .pick-cell.win{border-color:var(--success);background:rgba(59,154,90,.1)}
+  .pick-cell.lose{border-color:var(--danger);background:rgba(226,75,74,.08)}
+  .pick-cell.draw{border-color:var(--accent);background:rgba(79,142,247,.08)}
+  .choice-display{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:24px 12px;text-align:center;font-size:48px;min-height:100px;
+    display:flex;align-items:center;justify-content:center;transition:.2s}
+  .choice-display.reveal{border-color:var(--accent)}
+  .choice-result{text-align:center;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;min-width:50px}
+  .choice-result.win{color:var(--success)}
+  .choice-result.lose{color:var(--danger)}
+  .choice-result.draw{color:var(--accent)}
+
+  .rps-btns{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .rps-btn{background:var(--surface);border:2px solid var(--border);border-radius:14px;
+    padding:18px 8px;font-size:38px;cursor:pointer;transition:.15s;text-align:center;-webkit-user-select:none}
+  .rps-btn:active:not(:disabled){transform:scale(.94);border-color:var(--gold)}
+  .rps-btn:disabled{opacity:.35}
+  .rps-label{font-size:10px;color:var(--muted);display:block;margin-top:4px;letter-spacing:.06em;text-transform:uppercase;font-weight:700}
+
+  /* RESULT POPUP — slimmer, no emoji */
+  .result-popup-overlay{position:fixed;inset:0;background:rgba(0,0,0,.8);display:none;
+    align-items:center;justify-content:center;z-index:150;padding:20px;
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);animation:fadein .25s ease}
+  .result-popup-overlay.open{display:flex}
+  .result-popup{background:var(--surface);border:2px solid var(--border);border-radius:14px;
+    padding:18px 18px;width:100%;max-width:300px;text-align:center;animation:popin .3s cubic-bezier(.34,1.56,.64,1)}
+  .result-popup.win{border-color:var(--success)}
+  .result-popup.lose{border-color:var(--danger)}
+  .result-popup.draw{border-color:var(--accent)}
+  @keyframes popin{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
+  @keyframes fadein{from{opacity:0}to{opacity:1}}
+  .result-title{font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:.05em;font-weight:700;margin-bottom:4px;line-height:1.1}
+  .result-popup.win .result-title{color:var(--success)}
+  .result-popup.lose .result-title{color:var(--danger)}
+  .result-popup.draw .result-title{color:var(--accent)}
+  .result-detail{font-size:13px;color:var(--text);margin-top:4px;line-height:1.4}
+  .elo-change{font-family:'Bebas Neue',sans-serif;font-size:18px;margin-top:8px;font-weight:700}
+  .elo-change.up{color:var(--success)}
+  .elo-change.down{color:var(--danger)}
+  .reward-pop{margin-top:10px;padding:10px;background:rgba(var(--gold-rgb),.12);border:1px solid var(--gold);border-radius:8px;font-size:12px}
+  .reward-pop .emoji-big{font-size:34px;display:block;margin-bottom:4px;line-height:1}
+  .reward-pop strong{color:var(--gold)}
+  .result-actions{display:flex;gap:8px;margin-top:12px;justify-content:center;flex-wrap:wrap}
+  .result-actions button{background:var(--surface2);border:1px solid var(--border);
+    color:var(--text);border-radius:8px;padding:9px 16px;cursor:pointer;font-size:13px;font-weight:600;flex:1;min-width:110px}
+  .result-actions button.primary{background:var(--gold);border-color:var(--gold);color:#000}
+  .result-actions button:active{transform:scale(.96)}
+
+  .tourney-list{display:flex;flex-direction:column;gap:10px}
+
+  .host-tourney-btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:7px 12px;cursor:pointer;font-size:12px;font-weight:700;letter-spacing:.04em;-webkit-user-select:none;flex-shrink:0}
+  .host-tourney-btn:active{transform:scale(.96);opacity:.85}
+  .host-bo-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px}
+  .host-bo-opt{background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:12px 8px;text-align:center;cursor:pointer;transition:.15s;-webkit-user-select:none}
+  .host-bo-opt:active{transform:scale(.97)}
+  .host-bo-opt.selected{border-color:var(--accent);background:rgba(79,142,247,.1)}
+  .host-bo-opt-bo{font-family:'Bebas Neue',sans-serif;font-size:18px;font-weight:700;line-height:1;letter-spacing:.04em}
+  .host-bo-opt-prize{font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--gold);font-weight:700;margin-top:4px}
+  .host-bo-opt-entry{font-size:10px;color:var(--muted);margin-top:1px}
+  .host-invites-title{font-size:11px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;font-weight:600;margin-top:14px;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+  .host-invites-hint{font-size:10px;color:var(--gold);font-weight:500;letter-spacing:.04em;text-transform:none}
+  .host-invites{max-height:144px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:6px}
+  .host-invites-empty{font-size:11px;color:var(--muted);text-align:center;padding:14px 8px;line-height:1.4}
+  .host-invite-item{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:7px;cursor:pointer;-webkit-user-select:none;transition:.12s}
+  .host-invite-item:active{background:var(--surface3)}
+  .host-invite-item.selected{background:rgba(79,142,247,.12);border:1px solid rgba(79,142,247,.4);padding:6px 7px}
+  .host-invite-item.disabled{opacity:.4;pointer-events:none}
+  .host-invite-avatar{width:24px;height:24px;border-radius:50%;background:var(--surface3);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;border:1px solid var(--gold);box-sizing:border-box}
+  .host-invite-name{flex:1;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .host-invite-check{width:16px;height:16px;border-radius:4px;border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;color:#fff;background:transparent}
+  .host-invite-item.selected .host-invite-check{background:var(--accent);border-color:var(--accent)}
+  .tourney-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;
+    padding:14px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .tourney-card.active-tourney{border-color:var(--gold)}
+  .tourney-card.special{border-color:var(--epic);background:linear-gradient(135deg,rgba(169,107,255,.08),var(--surface))}
+  .tourney-info{flex:1;min-width:0}
+  .tourney-name{font-weight:700;font-size:14px;margin-bottom:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .tourney-meta{font-size:11px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap}
+  .tourney-prize{font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--gold);text-align:right;white-space:nowrap;font-weight:700}
+  .tourney-prize.emoji-prize{font-size:28px;line-height:1}
+  .tourney-entry{font-size:10px;color:var(--muted);text-align:right}
+  .join-btn{background:var(--surface2);border:1px solid var(--gold);color:var(--gold);
+    border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;
+    transition:.15s;white-space:nowrap;margin-top:8px;-webkit-user-select:none}
+  .join-btn:active{background:var(--gold);color:#000}
+
+  .bracket-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:6px}
+  .bracket{display:flex;gap:0;align-items:stretch;min-width:max-content}
+  .bracket-round{display:flex;flex-direction:column;justify-content:space-around;
+    min-width:120px;padding:0 6px;gap:4px}
+  .bracket-round-title{font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--muted);text-align:center;margin-bottom:6px;white-space:nowrap;font-weight:700}
+  .bracket-match{background:var(--surface);border:1px solid var(--border);border-radius:7px;
+    padding:7px 9px;display:flex;flex-direction:column;gap:3px;flex:1;margin:3px 0;
+    cursor:pointer;transition:.15s;min-height:50px;justify-content:center}
+  .bracket-match.active-match{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .bracket-player{font-size:11px;display:flex;align-items:center;justify-content:space-between;gap:4px;padding:2px 0;font-weight:700}
+  .bracket-player.winner{color:var(--gold)}
+  .bracket-player.loser{color:var(--muted)}
+  .bracket-player.tbd{color:var(--border);font-weight:500}
+  .bracket-player-clickable{cursor:pointer;border-radius:4px;transition:.12s}
+  .bracket-player-clickable:active{background:rgba(var(--gold-rgb),.18)}
+  .bracket-score{font-size:11px;font-weight:700;min-width:14px;text-align:right}
+
+  .history-list{display:flex;flex-direction:column;gap:8px}
+  .history-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;
+    padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px}
+  .hist-result{font-weight:700;font-size:11px;padding:3px 8px;border-radius:4px;letter-spacing:.08em}
+  .hist-result.W{background:rgba(59,154,90,.2);color:var(--success)}
+  .hist-result.L{background:rgba(226,75,74,.15);color:var(--danger)}
+  .hist-result.D{background:rgba(79,142,247,.1);color:var(--accent)}
+  .hist-elo{font-weight:700;white-space:nowrap;font-family:'Bebas Neue',sans-serif;font-size:14px}
+  .hist-elo.pos{color:var(--success)}
+  .hist-elo.neg{color:var(--danger)}
+  .hist-elo.zero{color:var(--muted)}
+  .hist-opp-row{display:flex;align-items:center;gap:0;font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hist-opp-avatar{font-size:13px;width:28px;height:28px;border-radius:50%;background:var(--surface2);border:1px solid var(--gold);display:inline-flex;align-items:center;justify-content:center;margin-right:8px;flex-shrink:0;line-height:1;box-sizing:border-box}
+
+  .buy-btn{background:var(--surface2);border:1px solid var(--gold);color:var(--gold);
+    border-radius:8px;padding:6px 10px;font-size:14px;font-weight:700;cursor:pointer;-webkit-user-select:none;line-height:1}
+  .buy-btn:active{background:var(--gold);color:#000}
+
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);display:none;
+    align-items:center;justify-content:center;z-index:100;padding:20px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+  .modal-overlay.open{display:flex;animation:fadein .2s ease}
+  .modal{background:var(--surface);border:1px solid var(--border);border-radius:18px;
+    padding:24px;width:100%;max-width:340px;max-height:80vh;overflow-y:auto}
+  .modal h3{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.05em;margin-bottom:12px;font-weight:700}
+  .modal-btns{display:flex;gap:10px;margin-top:18px}
+  .btn-cancel{flex:1;background:none;border:1px solid var(--border);color:var(--muted);
+    border-radius:10px;padding:12px;cursor:pointer;font-size:14px;font-weight:500}
+  .btn-confirm{flex:1;background:var(--gold);border:none;color:#000;
+    border-radius:10px;padding:12px;cursor:pointer;font-size:14px;font-weight:700}
+  .btn-confirm:disabled{opacity:.4;cursor:not-allowed}
+  .btn-cancel:active,.btn-confirm:active:not(:disabled){transform:scale(.97)}
+
+  .empty-state{text-align:center;padding:40px 0;color:var(--muted);font-size:14px}
+
+  .install-hint{background:linear-gradient(135deg,rgba(var(--gold-rgb),.15),rgba(79,142,247,.1));
+    border:1px solid var(--gold);border-radius:12px;padding:14px;
+    display:none;font-size:13px;line-height:1.5;position:relative}
+  .install-hint.show{display:block}
+  .install-hint .x{position:absolute;top:8px;right:8px;background:none;border:none;
+    color:var(--muted);font-size:18px;cursor:pointer;padding:4px}
+  .install-hint strong{color:var(--gold)}
+
+  .toast{position:fixed;bottom:calc(20px + var(--safe-bot));left:50%;transform:translateX(-50%);
+    background:var(--surface);border:1px solid var(--gold);border-radius:10px;padding:10px 18px;
+    font-size:13px;z-index:200;display:none;animation:slideup .25s ease;text-align:center;max-width:90%}
+  .toast.show{display:block}
+  /* Reward/unlock toasts appear at the top with a longer-lasting, more prominent style. */
+  .toast.reward{bottom:auto;top:calc(20px + var(--safe-top));
+    background:linear-gradient(135deg,rgba(var(--gold-rgb),.18),var(--surface) 70%);
+    border:1.5px solid var(--gold);box-shadow:0 8px 24px rgba(0,0,0,.5),0 0 0 4px rgba(var(--gold-rgb),.08);
+    padding:14px 22px;font-size:14px;font-weight:600;animation:slidedown .3s cubic-bezier(.34,1.56,.64,1)}
+  @keyframes slideup{from{opacity:0;transform:translate(-50%,20px)}to{opacity:1;transform:translate(-50%,0)}}
+  @keyframes slidedown{from{opacity:0;transform:translate(-50%,-20px)}to{opacity:1;transform:translate(-50%,0)}}
+
+  .profile-hero{background:linear-gradient(135deg,var(--surface),var(--surface2));border:1px solid var(--border);border-radius:16px;
+    padding:24px 20px;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;position:relative;overflow:hidden}
+  .profile-hero::before{content:'';position:absolute;inset:-50%;background:radial-gradient(circle,rgba(var(--gold-rgb),.15) 0%,transparent 60%);pointer-events:none}
+  .profile-hero > *{position:relative;z-index:1}
+
+  /* Compact hero used by friend profile (smaller avatar + name area) */
+  .fp-hero{background:linear-gradient(135deg,var(--surface),var(--surface2));border:1px solid var(--border);border-radius:14px;
+    padding:14px 16px;display:flex;align-items:center;gap:14px;position:relative;overflow:hidden}
+  .fp-hero::before{content:'';position:absolute;inset:-50%;background:radial-gradient(circle,rgba(var(--gold-rgb),.15) 0%,transparent 60%);pointer-events:none}
+  .fp-hero > *{position:relative;z-index:1}
+  .fp-big-avatar{width:64px;height:64px;border-radius:50%;background:var(--surface2);border:2.5px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:36px;flex-shrink:0}
+  .fp-meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+  .fp-name-row{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;font-weight:700;line-height:1}
+  .fp-meta .profile-tier{margin-top:0}
+  .fp-meta .friend-status{align-self:flex-start;margin-top:2px}
+  .big-avatar{width:110px;height:110px;border-radius:50%;background:var(--surface2);
+    border:3px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:64px;position:relative;cursor:pointer}
+  .big-avatar:active{transform:scale(.97)}
+  .big-avatar .edit-pencil{position:absolute;bottom:0;right:0;background:var(--gold);color:#000;
+    width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;border:2px solid var(--bg)}
+  .profile-name-row{font-family:'Bebas Neue',sans-serif;font-size:30px;letter-spacing:.05em;display:flex;align-items:center;gap:8px;justify-content:center;line-height:1;font-weight:700}
+  .profile-name-row .edit-name{background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;padding:4px}
+  .profile-tier{font-size:11px;color:var(--rank-color,var(--gold));letter-spacing:.12em;text-transform:uppercase;font-weight:700;margin-top:6px}
+  .profile-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .pstat{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+  .pstat-label{font-size:10px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;font-weight:600}
+  .pstat-val{font-family:'Bebas Neue',sans-serif;font-size:24px;color:var(--gold);margin-top:2px;font-weight:700}
+
+  /* CHALLENGES */
+  .challenge-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;align-items:center;gap:14px}
+  .challenge-card.complete{border-color:var(--success);background:rgba(59,154,90,.06)}
+  .challenge-emoji{font-size:36px;flex-shrink:0;width:50px;text-align:center}
+  .challenge-info{flex:1;min-width:0}
+  .challenge-name{font-weight:700;font-size:13px;margin-bottom:4px}
+  .challenge-desc{font-size:11px;color:var(--muted);line-height:1.4;margin-bottom:6px}
+  .challenge-progress{height:6px;background:var(--surface3);border-radius:3px;overflow:hidden;margin-top:4px}
+  .challenge-progress-fill{height:100%;background:var(--gold);transition:width .4s}
+  .challenge-progress-fill.done{background:var(--success)}
+  .challenge-progress-text{font-size:10px;color:var(--muted);margin-top:3px;font-weight:600}
+  .challenge-progress-text.done{color:var(--success)}
+
+  .shop-tabs{display:flex;gap:6px;margin-bottom:4px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .shop-tabs::-webkit-scrollbar{display:none}
+  .shop-tab{flex:1 0 auto;background:var(--surface);border:1px solid var(--border);color:var(--muted);
+    border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;transition:.15s;white-space:nowrap}
+  .shop-tab.active{border-color:var(--gold);color:var(--gold);background:rgba(var(--gold-rgb),.08)}
+
+  .shop-rarity-section{margin-bottom:14px}
+  .shop-rarity-header{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+  .shop-rarity-header.common{color:var(--common)}
+  .shop-rarity-header.rare{color:var(--rare)}
+  .shop-rarity-header.epic{color:var(--epic)}
+  .shop-rarity-header.legendary{color:var(--legendary)}
+  .shop-rarity-header .count{color:var(--muted);font-weight:500;letter-spacing:.05em}
+
+  .shop-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .shop-item{background:var(--surface);border:1.5px solid var(--border);border-radius:10px;
+    padding:10px 4px;text-align:center;cursor:pointer;transition:.15s;position:relative;overflow:hidden}
+  .shop-item:active{transform:scale(.96)}
+  .shop-item.equipped{border-color:var(--gold);background:rgba(var(--gold-rgb),.1)}
+  .shop-item.locked{opacity:.6;cursor:default}
+  .shop-emoji{font-size:30px;margin-bottom:4px;height:36px;display:flex;align-items:center;justify-content:center}
+  .shop-name{font-size:9px;color:var(--muted);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500;padding:0 2px}
+  .shop-action{font-size:9px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;line-height:1.2}
+  .shop-action.buy{color:var(--gold)}
+  .shop-action.owned{color:var(--success)}
+  .shop-action.equipped{color:var(--gold)}
+  .shop-action.free{color:var(--success)}
+  .shop-action.locked{color:var(--muted)}
+
+  .shop-featured{background:linear-gradient(135deg,rgba(var(--gold-rgb),.1),rgba(79,142,247,.05));
+    border:1px solid var(--gold);border-radius:14px;padding:14px;margin-bottom:14px}
+  .shop-featured-header{margin:-4px -4px 8px;padding:4px;border-radius:8px;-webkit-user-select:none}
+  .shop-featured-title{font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--gold);font-weight:700;margin-bottom:2px;letter-spacing:.05em;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .shop-featured-cycle{font-size:10px;color:var(--muted);font-weight:600;letter-spacing:.06em;text-transform:none;font-family:'DM Sans',sans-serif}
+  .shop-featured-sub{font-size:11px;color:var(--muted)}
+  .shop-featured-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+
+  .name-input{width:100%;background:var(--surface2);border:1px solid var(--border);
+    color:var(--text);border-radius:10px;padding:12px;font-size:15px;font-family:inherit;font-weight:600}
+  .name-input:focus{outline:none;border-color:var(--gold)}
+
+  .tourney-inline{display:flex;flex-direction:column;gap:10px}
+  .back-bar{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .back-bar button{background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:7px 12px;cursor:pointer;font-size:12px;font-weight:600}
+
+  /* DAILY CLAIM */
+  .daily-claim{background:linear-gradient(135deg,rgba(59,154,90,.15),rgba(var(--gold-rgb),.08));
+    border:1px solid var(--success);border-radius:12px;padding:14px;
+    display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:10px}
+  .daily-claim.claimed{border-color:var(--border);background:var(--surface);opacity:.85}
+  .daily-claim-info{flex:1;min-width:0}
+  .daily-claim-title{font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--success);font-weight:700;letter-spacing:.05em;margin-bottom:2px}
+  .daily-claim.claimed .daily-claim-title{color:var(--muted)}
+  .daily-claim-sub{font-size:11px;color:var(--muted)}
+  .daily-claim-btn{background:var(--success);color:#fff;border:none;border-radius:8px;padding:10px 16px;cursor:pointer;font-size:12px;font-weight:700;letter-spacing:.06em;-webkit-user-select:none;flex-shrink:0}
+  .daily-claim-btn:disabled{background:var(--surface2);color:var(--muted);cursor:not-allowed;border:1px solid var(--border)}
+  .daily-claim-btn:active:not(:disabled){transform:scale(.96)}
+
+  /* TIER LIST */
+  .tiers-summary{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;justify-content:space-around;text-align:center;gap:10px}
+  .tiers-summary-item .label{font-size:10px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;font-weight:600;margin-bottom:4px}
+  .tiers-summary-item .val{font-family:'Bebas Neue',sans-serif;font-size:24px;color:var(--gold);font-weight:700;line-height:1}
+  .tiers-list{display:flex;flex-direction:column;gap:10px}
+  .tier-row{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;align-items:center;gap:14px;position:relative;overflow:hidden}
+  .tier-row.current{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)}
+  .tier-row.unlocked .tier-name{opacity:1}
+  .tier-row.locked{opacity:.55}
+  .tier-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;background:var(--tier-c)}
+  .tier-info{flex:1;min-width:0}
+  .tier-name{font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:.05em;font-weight:700;color:var(--tier-c)}
+  .tier-range{font-size:11px;color:var(--muted);margin-top:1px}
+  .tier-badge{font-size:9px;font-weight:700;letter-spacing:.08em;padding:3px 7px;border-radius:4px;flex-shrink:0}
+  .tier-badge.you{background:var(--gold);color:#000}
+  .tier-badge.peak{background:rgba(169,107,255,.2);color:var(--epic);border:1px solid var(--epic)}
+
+  /* LEADERBOARD */
+  .leaderboard-link{background:rgba(var(--gold-rgb),.12);border:1px solid var(--gold);color:var(--gold);
+    border-radius:8px;padding:7px 12px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.04em;-webkit-user-select:none;flex-shrink:0}
+  .leaderboard-link:active{background:var(--gold);color:#000;transform:scale(.97)}
+  .lb-header{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center}
+  .lb-header-rank{font-family:'Bebas Neue',sans-serif;font-size:36px;color:var(--gold);font-weight:700;line-height:1}
+  .lb-header-label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-top:4px}
+  .lb-list{display:flex;flex-direction:column;gap:6px}
+  .lb-row{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:12px;cursor:pointer;transition:.15s}
+  .lb-row.you{border-color:var(--gold);background:rgba(var(--gold-rgb),.08)}
+  .lb-row:active{transform:scale(.99);border-color:var(--gold)}
+  .lb-rank{font-family:'Bebas Neue',sans-serif;font-size:20px;font-weight:700;color:var(--gold);min-width:34px;text-align:center;line-height:1}
+  .lb-rank.r1{color:#ffd700}
+  .lb-rank.r2{color:#c0c0c0}
+  .lb-rank.r3{color:#cd7f32}
+  .lb-avatar{width:32px;height:32px;border-radius:50%;background:var(--surface2);border:1.5px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+  .lb-info{flex:1;min-width:0}
+  .lb-name{font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lb-tier{font-size:10px;letter-spacing:.05em;font-weight:600;margin-top:1px}
+  .lb-elo{font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--gold);font-weight:700;flex-shrink:0}
+
+  /* FRIENDS */
+  .add-friend-row{display:flex;gap:8px;margin-bottom:6px}
+  .add-friend-row .name-input{flex:1}
+  .friends-list{display:flex;flex-direction:column;gap:8px}
+  .friend-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;
+    padding:12px 14px;display:flex;align-items:center;gap:12px;font-size:13px}
+  .friend-item-clickable{cursor:pointer;transition:.15s}
+  .friend-item-clickable:active{transform:scale(.99);border-color:var(--gold)}
+  .friend-status{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.05em;flex-shrink:0;padding:5px 10px;border-radius:14px}
+  .friend-status.online{background:rgba(59,154,90,.15);color:var(--success)}
+  .friend-status.offline{background:rgba(136,136,136,.15);color:var(--muted)}
+  .friend-status-dot{width:8px;height:8px;border-radius:50%}
+  .friend-status.online .friend-status-dot{background:var(--success);box-shadow:0 0 6px rgba(59,154,90,.6)}
+  .friend-status.offline .friend-status-dot{background:var(--muted)}
+  .friend-actions{display:flex;flex-direction:row;align-items:center;gap:8px;flex-shrink:0}
+  .friend-vs-btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;letter-spacing:.04em;cursor:pointer;-webkit-user-select:none;line-height:1}
+  .friend-vs-btn:active{transform:scale(.95);opacity:.85}
+  .friend-avatar{width:36px;height:36px;border-radius:50%;background:var(--surface2);
+    border:1.5px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+  .friend-info{flex:1;min-width:0}
+  .friend-name{font-weight:700;font-size:13px}
+  .friend-meta{font-size:10px;color:var(--muted);margin-top:1px}
+  .friend-remove{background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:5px 10px;cursor:pointer;font-size:11px}
+  .friend-remove:active{background:var(--danger);color:#fff;border-color:var(--danger)}
+
+  /* HISTORY ITEM is now clickable */
+  .history-item{cursor:pointer;transition:.15s}
+  .history-item:active{transform:scale(.99);border-color:var(--gold)}
+
+  /* HISTORY PLAYER MODAL (compact) */
+  .hpm-modal{max-width:300px;padding:18px}
+  .hpm-hero{display:flex;flex-direction:column;align-items:center;gap:5px;text-align:center}
+  .hpm-avatar{width:64px;height:64px;border-radius:50%;background:var(--surface2);border:2.5px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:36px}
+  .hpm-name{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:.04em;font-weight:700;line-height:1.1}
+  .hpm-tier{font-size:10px;letter-spacing:.1em;text-transform:uppercase;font-weight:700}
+  .hpm-section-title{font-size:10px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;font-weight:600;margin-top:12px;margin-bottom:6px}
+  /* Stats grid mirrors the Profile-tab layout (.profile-stats 2-col) at modal scale */
+  .hpm-modal .profile-stats{gap:6px}
+  .hpm-modal .profile-stats .pstat{padding:9px 10px;border-radius:8px}
+  .hpm-modal .profile-stats .pstat-label{font-size:9px;letter-spacing:.06em}
+  .hpm-modal .profile-stats .pstat-val{font-size:20px;margin-top:1px}
+  .hpm-last{margin-top:8px;font-size:10px;color:var(--muted);text-align:center;line-height:1.4}
+  .hpm-btns{display:flex;gap:8px;margin-top:12px}
+  .hpm-btn{flex:1;padding:9px 10px;font-size:12px;border-radius:8px;cursor:pointer;font-weight:600;font-family:inherit}
+
+  /* LANDSCAPE LOCK
+     The PWA manifest already requests portrait orientation, but browsers (and
+     non-installed sessions) ignore it. This overlay forces a "rotate back"
+     notice in landscape so the layout never has to handle wide aspect ratios. */
+  .rotate-lock{display:none;position:fixed;inset:0;z-index:9999;background:var(--bg);
+    color:var(--text);align-items:center;justify-content:center;flex-direction:column;
+    gap:18px;padding:32px;text-align:center;font-family:'DM Sans',sans-serif}
+  .rotate-lock-icon{font-size:64px;animation:rotate-hint 2.2s ease-in-out infinite}
+  .rotate-lock-title{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:.06em;color:var(--gold)}
+  .rotate-lock-body{font-size:14px;color:var(--muted);line-height:1.5;max-width:280px}
+  @keyframes rotate-hint{
+    0%,100%{transform:rotate(-90deg)}
+    50%{transform:rotate(0deg)}
+  }
+  @media screen and (orientation: landscape) and (max-height: 500px){
+    .rotate-lock{display:flex}
+    #app{display:none}
+  }
+</style>
+</head>
+<body>
+<div class="rotate-lock" role="alert" aria-live="polite">
+  <div class="rotate-lock-icon">📱</div>
+  <div class="rotate-lock-title">Please Rotate</div>
+  <div class="rotate-lock-body">RPS Arena is designed for portrait mode. Rotate your device upright to continue.</div>
+</div>
+<div id="app">
+  <div class="header">
+    <div class="logo-wrap" onclick="showView('profile');renderProfile()">
+      <div class="header-avatar" id="header-avatar">😀</div>
+      <div class="logo" id="header-name">RPS ARENA</div>
+    </div>
+    <div class="wallet">
+      <span class="token-icon">▣</span>
+      <span class="wallet-amt" id="balance-display">10</span>
+      <button class="buy-btn" onclick="openBuy()">+</button>
+    </div>
+  </div>
+  <div class="nav">
+    <button class="nav-btn active" onclick="showView('lobby')">Lobby</button>
+    <button class="nav-btn" onclick="showView('profile');renderProfile()">Profile</button>
+    <button class="nav-btn" onclick="showView('history');renderHistory()">History</button>
+    <button class="nav-btn" onclick="showView('shop');renderShop()">Shop</button>
+  </div>
+
+  <div class="view-wrap">
+    <!-- LOBBY -->
+    <div class="view active" id="view-lobby">
+      <div class="install-hint" id="install-hint">
+        <button class="x" onclick="dismissInstall()">×</button>
+        <strong>Install RPS Arena</strong><br>
+        Tap the <strong>Share</strong> icon below, then <strong>Add to Home Screen</strong>.
+      </div>
+
+      <div class="elo-hero" id="elo-hero">
+        <div class="elo-rank-tier" id="elo-tier-name">UNRANKED</div>
+        <div class="elo-rank" id="elo-rating">1000</div>
+        <div class="elo-label" id="elo-rating-label" onclick="showView('tiers');renderTiers()" style="cursor:pointer">ELO Rating</div>
+        <div class="elo-progress">
+          <div class="elo-progress-fill" id="elo-progress-fill" style="width:0%"></div>
+        </div>
+        <div class="elo-progress-labels">
+          <span id="elo-tier-min">Bronze</span>
+          <span id="elo-tier-max">Silver</span>
+        </div>
+      </div>
+
+      <div class="section-title">Game Modes</div>
+      <div class="mode-grid">
+        <div class="mode-card featured" onclick="showLobbySection('pvp')">
+          <div class="badge">RANKED</div>
+          <div class="mode-icon">🎴</div>
+          <div class="mode-name">PvP</div>
+          <div class="mode-desc">Ranked match. Affects your ELO.</div>
+          <div class="mode-entry">1 token entry</div>
+        </div>
+        <div class="mode-card" onclick="showLobbySection('tourney')">
+          <div class="mode-icon">🏆</div>
+          <div class="mode-name">Tournaments</div>
+          <div class="mode-desc">8-player bracket. First to 3 wins.</div>
+          <div class="mode-entry">1–10 tokens</div>
+        </div>
+        <div class="mode-card" onclick="showView('friends');renderFriends()">
+          <div class="mode-icon">👥</div>
+          <div class="mode-name">Friends</div>
+          <div class="mode-desc">Manage your friends list.</div>
+          <div class="mode-entry"><span id="friends-count-mini">0</span> friends</div>
+        </div>
+        <div class="mode-card" onclick="showView('shop');renderShop()">
+          <div class="mode-icon">🛒</div>
+          <div class="mode-name">Shop</div>
+          <div class="mode-desc">Customize your avatar. <span id="shop-owned-count">2</span> owned.</div>
+          <div class="mode-entry">1100+ emojis</div>
+        </div>
+      </div>
+
+      <div class="tourney-inline" id="lobby-pvp" style="display:none">
+        <div class="back-bar">
+          <button onclick="hideLobbySections()">← Back</button>
+          <div style="font-weight:700">Find PvP Match</div>
+        </div>
+        <div class="pvp-info">
+          <div class="pvp-info-left">
+            <div class="pvp-info-label">Prize</div>
+            <div class="pvp-info-prize" id="pvp-prize-display">▣ 3</div>
+            <div class="pvp-info-entry" id="pvp-entry-display">Entry: 1 token · First to 3 wins</div>
+          </div>
+          <div class="pvp-info-right">
+            <div class="pvp-info-label" style="margin-bottom:4px">ELO Change</div>
+            <div class="pvp-info-elo"><span class="pos" id="pvp-elo-up">+0</span> / <span class="neg" id="pvp-elo-down">-0</span></div>
+          </div>
+        </div>
+        <div id="pvp-error" style="font-size:12px;color:var(--danger);margin-bottom:4px;display:none"></div>
+        <button class="find-btn" onclick="startFindMatch()">Find Match</button>
+      </div>
+
+      <div class="searching-ui" id="pvp-searching">
+        <div class="pulse"></div>
+        <div style="font-weight:700;margin-bottom:4px;font-size:15px">Finding opponent…</div>
+        <div style="font-size:12px;color:var(--muted)"><span id="search-entry-display"></span> token held</div>
+        <button onclick="cancelSearch()" style="margin-top:18px;background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:9px 18px;cursor:pointer;font-size:13px">Cancel</button>
+      </div>
+
+      <div class="tourney-inline" id="lobby-tourney" style="display:none">
+        <div class="back-bar">
+          <button onclick="hideLobbySections()">← Back</button>
+          <div style="font-weight:700;flex:1">Open Tournaments</div>
+          <button class="host-tourney-btn" onclick="openHostTourneyModal()">+ Host</button>
+        </div>
+        <div class="tourney-list" id="tourney-list"></div>
+      </div>
+
+      <div class="tourney-inline" id="lobby-bracket" style="display:none">
+        <div class="back-bar">
+          <button onclick="showLobbySection('tourney')">← Back</button>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:14px" id="bracket-tourney-name"></div>
+            <div style="font-size:11px;color:var(--muted)" id="bracket-tourney-status"></div>
+          </div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--gold);white-space:nowrap;font-weight:700" id="bracket-prize"></div>
+        </div>
+        <div class="bracket-wrap">
+          <div class="bracket" id="bracket-view"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GAME -->
+    <div class="view" id="view-game">
+      <div class="game-exit-row">
+        <button class="game-exit-btn" onclick="leaveGame()">← Forfeit</button>
+      </div>
+      <div class="streak-hud" id="streak-hud" style="display:none">
+        <div class="streak-info">
+          <div class="streak-label">Streak</div>
+          <div class="streak-val" id="streak-current">0</div>
+        </div>
+        <div class="streak-info" style="text-align:center">
+          <div class="streak-label">Best</div>
+          <div class="streak-val" id="streak-best">0</div>
+        </div>
+        <div class="streak-info" style="align-items:flex-end">
+          <div class="streak-label">Strikes</div>
+          <div class="strikes" id="strike-dots">
+            <div class="strike-dot"></div>
+            <div class="strike-dot"></div>
+          </div>
+        </div>
+      </div>
+      <div class="game-header">
+        <div class="player-info">
+          <div class="player-name-row">
+            <div class="mini-avatar" id="you-avatar">😀</div>
+            <span class="player-name" id="you-name">You</span>
+          </div>
+          <div class="player-elo" id="you-elo" style="display:none">ELO <span class="num">1000</span></div>
+          <div class="player-score" id="score-you">0</div>
+          <div class="stake-tag" id="stake-label">2 token entry</div>
+        </div>
+        <div class="vs">VS</div>
+        <div class="player-info right">
+          <div class="player-name-row">
+            <span class="player-name" id="opp-name">Opponent</span>
+            <div class="mini-avatar" id="opp-avatar">🤖</div>
+          </div>
+          <div class="player-elo" id="opp-elo" style="display:none">ELO <span class="num">1000</span></div>
+          <div class="player-score" id="score-opp">0</div>
+          <div style="font-size:11px;color:var(--muted)" id="round-label">First to 3 wins</div>
+        </div>
+      </div>
+      <div class="round-info" id="round-info">Round 1 of 3 — make your pick</div>
+      <div class="pick-history" id="pick-history"></div>
+      <div class="choices-row">
+        <div class="choice-display" id="choice-you">?</div>
+        <div class="choice-result" id="round-result"></div>
+        <div class="choice-display" id="choice-opp">?</div>
+      </div>
+      <div class="rps-btns">
+        <button class="rps-btn" id="btn-rock" onclick="play('rock')">🗿<span class="rps-label">Rock</span></button>
+        <button class="rps-btn" id="btn-paper" onclick="play('paper')">📝<span class="rps-label">Paper</span></button>
+        <button class="rps-btn" id="btn-scissors" onclick="play('scissors')">✂️<span class="rps-label">Scissors</span></button>
+      </div>
+    </div>
+
+    <!-- SHOP -->
+    <div class="view" id="view-shop">
+      <div class="section-title">Avatar Shop</div>
+
+      <!-- Daily free tokens -->
+      <div class="daily-claim" id="daily-claim">
+        <div class="daily-claim-info">
+          <div class="daily-claim-title">🎁 DAILY GIFT</div>
+          <div class="daily-claim-sub" id="daily-claim-sub">Free 3 tokens, every day</div>
+        </div>
+        <button class="daily-claim-btn" id="daily-claim-btn" onclick="claimDailyTokens()">CLAIM</button>
+      </div>
+
+      <div class="shop-featured" id="shop-featured">
+        <div class="shop-featured-header">
+          <div class="shop-featured-title">⭐ DAILY FEATURED <span class="shop-featured-cycle">rotates hourly</span></div>
+          <div class="shop-featured-sub" id="shop-featured-sub"></div>
+        </div>
+        <div class="shop-featured-grid" id="shop-featured-grid"></div>
+      </div>
+
+      <!-- Challenges -->
+      <div class="section-title">Challenges</div>
+      <div id="challenges-list" style="display:flex;flex-direction:column;gap:10px"></div>
+
+      <div class="section-title" style="margin-top:6px">Browse</div>
+      <div class="shop-tabs" id="shop-tabs">
+        <button class="shop-tab active" data-cat="all" onclick="setShopTab(this,'all')">All</button>
+        <button class="shop-tab" data-cat="owned" onclick="setShopTab(this,'owned')">Owned</button>
+        <button class="shop-tab" data-cat="faces" onclick="setShopTab(this,'faces')">Faces</button>
+        <button class="shop-tab" data-cat="hands" onclick="setShopTab(this,'hands')">People</button>
+        <button class="shop-tab" data-cat="animals" onclick="setShopTab(this,'animals')">Animals</button>
+        <button class="shop-tab" data-cat="food" onclick="setShopTab(this,'food')">Food</button>
+        <button class="shop-tab" data-cat="activities" onclick="setShopTab(this,'activities')">Sports</button>
+        <button class="shop-tab" data-cat="travel" onclick="setShopTab(this,'travel')">Travel</button>
+        <button class="shop-tab" data-cat="objects" onclick="setShopTab(this,'objects')">Objects</button>
+        <button class="shop-tab" data-cat="plants" onclick="setShopTab(this,'plants')">Plants</button>
+      </div>
+      <div id="shop-content"></div>
+    </div>
+
+    <!-- PROFILE -->
+    <div class="view" id="view-profile">
+      <div class="profile-hero">
+        <div class="big-avatar" onclick="showView('shop');renderShop()">
+          <span id="profile-avatar">😀</span>
+          <div class="edit-pencil">✎</div>
+        </div>
+        <div>
+          <div class="profile-name-row">
+            <span id="profile-name">Player</span>
+            <button class="edit-name" onclick="editName()">✎</button>
+          </div>
+          <div class="profile-tier" id="profile-tier">Unranked · 1000 ELO</div>
+        </div>
+      </div>
+      <div class="section-title">Stats</div>
+      <div class="profile-stats">
+        <div class="pstat"><div class="pstat-label">Total Wins</div><div class="pstat-val" id="ps-wins">0</div></div>
+        <div class="pstat"><div class="pstat-label">Win Rate</div><div class="pstat-val" id="ps-winrate">—</div></div>
+        <div class="pstat"><div class="pstat-label">Tokens Earned</div><div class="pstat-val" id="ps-earned">0</div></div>
+        <div class="pstat"><div class="pstat-label">Best PvP Streak</div><div class="pstat-val" id="ps-streak">0</div></div>
+        <div class="pstat"><div class="pstat-label">Tourneys Won</div><div class="pstat-val" id="ps-trophies">0</div></div>
+        <div class="pstat"><div class="pstat-label">Total Games</div><div class="pstat-val" id="ps-games">0</div></div>
+      </div>
+      <div class="section-title" style="margin-top:6px">Pick Distribution</div>
+      <div class="pick-dist" id="pick-dist">
+        <div class="pick-dist-row" data-pick="rock">
+          <div class="pick-dist-icon">🗿</div>
+          <div class="pick-dist-bar"><div class="pick-dist-fill" id="pd-fill-rock" style="width:0%"></div></div>
+          <div class="pick-dist-num"><span id="pd-num-rock">0</span><span class="pd-pct" id="pd-pct-rock">0%</span></div>
+        </div>
+        <div class="pick-dist-row" data-pick="paper">
+          <div class="pick-dist-icon">📝</div>
+          <div class="pick-dist-bar"><div class="pick-dist-fill" id="pd-fill-paper" style="width:0%"></div></div>
+          <div class="pick-dist-num"><span id="pd-num-paper">0</span><span class="pd-pct" id="pd-pct-paper">0%</span></div>
+        </div>
+        <div class="pick-dist-row" data-pick="scissors">
+          <div class="pick-dist-icon">✂️</div>
+          <div class="pick-dist-bar"><div class="pick-dist-fill" id="pd-fill-scissors" style="width:0%"></div></div>
+          <div class="pick-dist-num"><span id="pd-num-scissors">0</span><span class="pd-pct" id="pd-pct-scissors">0%</span></div>
+        </div>
+      </div>
+      <div class="section-title" style="margin-top:6px">Theme Color</div>
+      <div class="theme-picker" id="theme-picker"></div>
+      <div class="theme-custom-row">
+        <button class="theme-custom-apply" onclick="applyCustomTheme()">Apply Custom</button>
+        <input type="color" class="theme-custom-input" id="theme-custom-input" value="#c9a84c">
+      </div>
+
+      <div class="section-title" style="margin-top:14px">Secret Challenges</div>
+      <div class="secret-challenges" id="secret-challenges"></div>
+
+      <div class="section-title" style="margin-top:6px">Owned Emojis (<span id="ps-collection-count">0</span>)</div>
+      <div id="ps-collection"></div>
+      <button id="reset-btn" onclick="confirmReset()" style="margin-top:8px;background:none;border:1px solid var(--danger);color:var(--danger);border-radius:10px;padding:11px;cursor:pointer;font-size:13px;font-weight:600">Reset all progress (one-time)</button>
+    </div>
+
+    <!-- HISTORY -->
+    <div class="view" id="view-history">
+      <div class="section-title" style="margin-bottom:10px">Match History</div>
+      <div class="history-list" id="history-list">
+        <div class="empty-state">No matches yet.<br>Start playing!</div>
+      </div>
+    </div>
+
+    <!-- TIERS (ELO tier list) -->
+    <div class="view" id="view-tiers">
+      <div class="back-bar">
+        <button onclick="showView('lobby')">← Back</button>
+        <div style="font-weight:700;flex:1">ELO Tier List</div>
+        <button class="leaderboard-link" onclick="showView('leaderboard');renderLeaderboard()">Leaderboard →</button>
+      </div>
+      <div class="tiers-summary" id="tiers-summary"></div>
+      <div class="tiers-list" id="tiers-list"></div>
+    </div>
+
+    <!-- LEADERBOARD -->
+    <div class="view" id="view-leaderboard">
+      <div class="back-bar">
+        <button onclick="showView('tiers');renderTiers()">← Back to Tiers</button>
+        <div style="font-weight:700">Leaderboard</div>
+      </div>
+      <div class="lb-header" id="lb-header"></div>
+      <div class="lb-list" id="lb-list"></div>
+    </div>
+
+    <!-- FRIENDS -->
+    <div class="view" id="view-friends">
+      <div class="back-bar">
+        <button onclick="showView('lobby')">← Back</button>
+        <div style="font-weight:700">Friends</div>
+      </div>
+      <div class="add-friend-row">
+        <input type="text" class="name-input" id="friend-input" maxlength="16" placeholder="Add friend by username" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+        <button class="find-btn" style="padding:11px 16px;width:auto;font-size:13px" onclick="addFriend()">Add</button>
+      </div>
+      <div id="friends-list" class="friends-list"></div>
+    </div>
+
+    <!-- FRIEND PROFILE PAGE (full view; mirrors Profile tab; shown when tapping a friend) -->
+    <div class="view" id="view-friend-profile">
+      <div class="back-bar">
+        <button onclick="showView('friends');renderFriends()">← Back to Friends</button>
+        <div style="font-weight:700">Friend Profile</div>
+      </div>
+      <div class="fp-hero">
+        <div class="fp-big-avatar"><span id="fp-avatar">🤖</span></div>
+        <div class="fp-meta">
+          <div class="fp-name-row"><span id="fp-name">Friend</span></div>
+          <div class="profile-tier" id="fp-tier">Unranked · 1000 ELO</div>
+          <div class="friend-status" id="fp-status">
+            <span class="friend-status-dot"></span>
+            <span class="friend-status-label" id="fp-status-label">Offline</span>
+          </div>
+        </div>
+      </div>
+      <div class="section-title">Stats</div>
+      <div class="profile-stats">
+        <div class="pstat"><div class="pstat-label">Total Wins</div><div class="pstat-val" id="fp-wins">0</div></div>
+        <div class="pstat"><div class="pstat-label">Win Rate</div><div class="pstat-val" id="fp-winrate">—</div></div>
+        <div class="pstat"><div class="pstat-label">Tokens Earned</div><div class="pstat-val" id="fp-earned">0</div></div>
+        <div class="pstat"><div class="pstat-label">Best PvP Streak</div><div class="pstat-val" id="fp-streak">0</div></div>
+        <div class="pstat"><div class="pstat-label">Tourneys Won</div><div class="pstat-val" id="fp-trophies">0</div></div>
+        <div class="pstat"><div class="pstat-label">Total Games</div><div class="pstat-val" id="fp-games">0</div></div>
+      </div>
+      <div class="section-title" style="margin-top:6px">Owned Emojis (<span id="fp-collection-count">0</span>)</div>
+      <div id="fp-collection"></div>
+      <button id="fp-vs-btn" style="margin-top:10px;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:12px;cursor:pointer;font-size:14px;font-weight:700;letter-spacing:.04em">⚔ Request Match (Free)</button>
+      <button id="fp-remove-btn" style="margin-top:8px;background:none;border:1px solid var(--danger);color:var(--danger);border-radius:10px;padding:11px;cursor:pointer;font-size:13px;font-weight:600">Remove Friend</button>
+    </div>
+  </div>
+</div>
+
+<!-- HISTORY PLAYER PROFILE WINDOW (modal opened from history list) -->
+<div class="modal-overlay" id="history-player-modal">
+  <div class="modal hpm-modal">
+    <div class="hpm-hero">
+      <div class="hpm-avatar" id="hpm-avatar">🤖</div>
+      <div class="hpm-name" id="hpm-name">Opponent</div>
+      <div class="hpm-tier" id="hpm-tier"></div>
+    </div>
+    <div class="hpm-section-title">Stats</div>
+    <div class="profile-stats" id="hpm-stats"></div>
+    <div id="hpm-last" class="hpm-last"></div>
+    <div id="hpm-rounds-wrap" style="display:none">
+      <div class="hpm-section-title">Round-by-Round</div>
+      <div class="pick-history" id="hpm-rounds"></div>
+    </div>
+    <div class="hpm-btns">
+      <button class="btn-cancel hpm-btn" onclick="closeHistoryPlayerModal()">Close</button>
+      <button class="btn-confirm hpm-btn" id="hpm-add-btn" onclick="addFriendFromHistoryModal()">Add Friend</button>
+    </div>
+  </div>
+</div>
+
+<!-- RESULT POPUP (no emoji) -->
+<div class="result-popup-overlay" id="result-popup-overlay">
+  <div class="result-popup" id="result-popup">
+    <div class="result-title" id="result-title"></div>
+    <div class="result-detail" id="result-detail"></div>
+    <div class="elo-change" id="elo-change-display"></div>
+    <div id="reward-pop-area"></div>
+    <div class="result-actions" id="result-actions">
+      <button onclick="leaveGame()">Back to Lobby</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <h3 id="modal-title">Confirm</h3>
+    <div id="modal-body" style="font-size:13px;color:var(--muted);line-height:1.6"></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-confirm" id="modal-confirm-btn">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- RESET MODAL (separate, requires typing 'confirm') -->
+<div class="modal-overlay" id="reset-modal">
+  <div class="modal">
+    <h3>Reset all progress?</h3>
+    <div style="font-size:13px;color:var(--muted);line-height:1.6">
+      This will erase your stats, ELO, tokens, history, and tournaments.
+      <strong style="color:var(--text)">Your owned emojis will be kept.</strong><br><br>
+      <strong style="color:var(--danger)">You can only reset ONCE.</strong> Cannot be undone.<br><br>
+      Type <strong style="color:var(--danger)">confirm</strong> below to proceed.
+    </div>
+    <input type="text" class="name-input" id="reset-confirm-input" placeholder="Type 'confirm'" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" style="margin-top:14px">
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeResetModal()">Cancel</button>
+      <button class="btn-confirm" id="reset-confirm-btn" disabled onclick="executeReset()">Reset</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="buy-modal">
+  <div class="modal">
+    <h3>Buy Tokens</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0">
+      <button onclick="buyTokens(10,4.99)" class="buy-pack">
+        <div class="bp-amt">▣ 10</div><div class="bp-price">$4.99</div>
+      </button>
+      <button onclick="buyTokens(25,9.99)" class="buy-pack">
+        <div class="bp-amt">▣ 25</div><div class="bp-price">$9.99</div>
+      </button>
+      <button onclick="buyTokens(60,19.99)" class="buy-pack">
+        <div class="bp-amt">▣ 60</div><div class="bp-price">$19.99</div>
+      </button>
+      <button onclick="buyTokens(180,49.99)" class="buy-pack">
+        <div class="bp-amt">▣ 180</div><div class="bp-price">$49.99 <span class="bp-best">BEST</span></div>
+      </button>
+    </div>
+    <div style="font-size:10px;color:var(--muted);text-align:center;margin-bottom:10px;line-height:1.4">
+      Demo only — no real charge.
+    </div>
+    <button onclick="document.getElementById('buy-modal').classList.remove('open')" style="width:100%;background:none;border:1px solid var(--border);color:var(--muted);border-radius:10px;padding:11px;cursor:pointer;font-size:13px">Cancel</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="name-modal">
+  <div class="modal">
+    <h3>Edit Display Name</h3>
+    <input type="text" class="name-input" id="name-input" maxlength="16" placeholder="Your name">
+    <div style="font-size:11px;color:var(--muted);margin-top:6px">Up to 16 characters</div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="document.getElementById('name-modal').classList.remove('open')">Cancel</button>
+      <button class="btn-confirm" onclick="saveName()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- HOST TOURNAMENT MODAL -->
+<div class="modal-overlay" id="host-tourney-modal">
+  <div class="modal">
+    <h3>Host Tournament</h3>
+    <div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px">
+      Pick the round format. 8-player single elimination. Higher rounds → bigger prize pool.
+    </div>
+    <div class="host-bo-grid" id="host-bo-grid"></div>
+    <div class="host-invites-title">Invite Friends <span class="host-invites-hint" id="host-invites-hint">(0/7 selected)</span></div>
+    <div class="host-invites" id="host-invites"></div>
+    <div style="font-size:11px;color:var(--muted);margin-top:10px;text-align:center">Entry deducted on host. Bracket created instantly.</div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeHostTourneyModal()">Cancel</button>
+      <button class="btn-confirm" id="host-tourney-confirm" onclick="hostTournamentConfirm()">Host (▣ —)</button>
+    </div>
+  </div>
+</div>
+
+<style>
+.buy-pack{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px 8px;cursor:pointer;text-align:center;transition:.15s;color:var(--text)}
+.buy-pack:active{transform:scale(.97);border-color:var(--gold)}
+.bp-amt{font-family:'Bebas Neue',sans-serif;font-size:22px;color:var(--gold);font-weight:700}
+.bp-price{font-size:12px;color:var(--muted);margin-top:2px}
+.bp-best{background:var(--gold);color:#000;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:4px}
+</style>
+
+<div class="toast" id="toast"></div>
+
+<script src="emoji-catalog.js"></script>
+<script src="app.js"></script>
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+}
+</script>
+</body>
+</html>
