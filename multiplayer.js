@@ -173,10 +173,12 @@ function _enqueueSelf(onFound) {
   myQ.onDisconnect().remove();
   const listener = myQ.on('value', (snap) => {
     const v = snap.val();
-    if (v && v.waiting === false && v.matchedWith) {
+    // Wait specifically for matchId — matchedWith (set first, by the transaction) is
+    // the OPPONENT's uid, not the match path, and arrives slightly before matchId does.
+    if (v && v.waiting === false && v.matchId) {
       myQ.off('value', listener);
       myQ.remove();
-      mpJoinMatch(v.matchedWith, 'p2', onFound);
+      mpJoinMatch(v.matchId, 'p2', onFound);
     }
   });
   mp._queueListener = { ref: myQ, listener };
