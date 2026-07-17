@@ -40,12 +40,16 @@
   #app.in-game .header,
   #app.in-game .nav{display:none}
 
-  .header{background:linear-gradient(180deg,rgba(var(--gold-rgb),.10),var(--surface) 80%);border-bottom:1px solid var(--border);
+  /* Header uses the same diagonal gold→blue tint as the Daily Featured shop card,
+     so the brand bar reads as a "featured" surface. No radial glow, no per-child
+     z-index lift — children sit flush against the gradient. Opacity roughly
+     doubled vs. the featured card so the bar reads clearly at a glance. */
+  .header{background:linear-gradient(135deg,rgba(var(--gold-rgb),.22),rgba(79,142,247,.13));border-bottom:1px solid var(--border);
     padding:14px 18px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:10px;position:relative}
   .header::after{content:'';position:absolute;left:0;right:0;bottom:0;height:1px;background:linear-gradient(90deg,transparent,rgba(var(--gold-rgb),.3),transparent);pointer-events:none}
   .logo-wrap{display:flex;align-items:center;gap:10px;cursor:pointer;flex:1;min-width:0}
   .logo-wrap:active{opacity:.7}
-  .header-avatar{width:36px;height:36px;border-radius:50%;background:var(--surface2);
+  .header-avatar{width:36px;height:36px;border-radius:50%;background:transparent;
     border:1.5px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
   .logo{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.1em;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700}
   .wallet{display:flex;align-items:center;gap:6px;background:var(--surface2);
@@ -98,9 +102,6 @@
   .pvp-info-elo{font-weight:700;letter-spacing:.05em}
   .pvp-info-elo .pos{color:var(--success)}
   .pvp-info-elo .neg{color:var(--danger)}
-
-  .online-status-row{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:7px;padding:2px 2px 4px}
-  .online-status-dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0;transition:background .3s}
 
   .find-btn{background:var(--accent);color:#fff;border:none;border-radius:12px;padding:15px;
     font-size:15px;font-weight:700;cursor:pointer;transition:.15s;width:100%;-webkit-user-select:none}
@@ -174,7 +175,8 @@
   .secret-card.unlocked{border-color:var(--gold)}
   .secret-card.claimed{border-color:var(--success);background:rgba(59,154,90,.05)}
   .secret-card-emoji{font-size:28px;width:42px;height:42px;display:flex;align-items:center;justify-content:center;flex-shrink:0;filter:grayscale(.7) opacity(.55)}
-  .secret-card.unlocked .secret-card-emoji{filter:none}
+  .secret-card.unlocked .secret-card-emoji,
+  .secret-card.claimed .secret-card-emoji{filter:none}
   .secret-info{flex:1;min-width:0}
   .secret-name{font-weight:700;font-size:13px;line-height:1.2}
   .secret-card.locked .secret-name{color:var(--muted)}
@@ -347,12 +349,16 @@
   @keyframes slideup{from{opacity:0;transform:translate(-50%,20px)}to{opacity:1;transform:translate(-50%,0)}}
   @keyframes slidedown{from{opacity:0;transform:translate(-50%,-20px)}to{opacity:1;transform:translate(-50%,0)}}
 
-  .profile-hero{background:linear-gradient(135deg,rgba(var(--gold-rgb),.12),rgba(var(--gold-rgb),.03) 60%,var(--surface));border:1px solid var(--border);border-radius:16px;
-    padding:24px 20px;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center}
+  .profile-hero{background:linear-gradient(135deg,var(--surface),var(--surface2));border:1px solid var(--border);border-radius:16px;
+    padding:24px 20px;display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center;position:relative;overflow:hidden}
+  .profile-hero::before{content:'';position:absolute;inset:-50%;background:radial-gradient(circle,rgba(var(--gold-rgb),.15) 0%,transparent 60%);pointer-events:none}
+  .profile-hero > *{position:relative;z-index:1}
 
   /* Compact hero used by friend profile (smaller avatar + name area) */
-  .fp-hero{background:linear-gradient(135deg,rgba(var(--gold-rgb),.12),rgba(var(--gold-rgb),.03) 60%,var(--surface));border:1px solid var(--border);border-radius:14px;
-    padding:14px 16px;display:flex;align-items:center;gap:14px}
+  .fp-hero{background:linear-gradient(135deg,var(--surface),var(--surface2));border:1px solid var(--border);border-radius:14px;
+    padding:14px 16px;display:flex;align-items:center;gap:14px;position:relative;overflow:hidden}
+  .fp-hero::before{content:'';position:absolute;inset:-50%;background:radial-gradient(circle,rgba(var(--gold-rgb),.15) 0%,transparent 60%);pointer-events:none}
+  .fp-hero > *{position:relative;z-index:1}
   .fp-big-avatar{width:64px;height:64px;border-radius:50%;background:var(--surface2);border:2.5px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:36px;flex-shrink:0}
   .fp-meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
   .fp-name-row{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:.04em;font-weight:700;line-height:1}
@@ -481,13 +487,6 @@
   .lb-elo{font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--gold);font-weight:700;flex-shrink:0}
 
   /* FRIENDS */
-  .my-friend-code-row{display:flex;gap:8px;align-items:center;margin-bottom:4px}
-  .my-friend-code-box{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:10px;
-    padding:12px;font-family:'Bebas Neue',sans-serif;font-size:14px;letter-spacing:.04em;color:var(--gold);
-    text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .my-friend-code-copy{background:var(--surface2);border:1px solid var(--gold);color:var(--gold);
-    border-radius:10px;padding:12px 14px;cursor:pointer;font-size:12px;font-weight:700;flex-shrink:0;-webkit-user-select:none}
-  .my-friend-code-copy:active{background:var(--gold);color:#000}
   .add-friend-row{display:flex;gap:8px;margin-bottom:6px}
   .add-friend-row .name-input{flex:1}
   .friends-list{display:flex;flex-direction:column;gap:8px}
@@ -531,9 +530,33 @@
   .hpm-last{margin-top:8px;font-size:10px;color:var(--muted);text-align:center;line-height:1.4}
   .hpm-btns{display:flex;gap:8px;margin-top:12px}
   .hpm-btn{flex:1;padding:9px 10px;font-size:12px;border-radius:8px;cursor:pointer;font-weight:600;font-family:inherit}
+
+  /* LANDSCAPE LOCK
+     The PWA manifest already requests portrait orientation, but browsers (and
+     non-installed sessions) ignore it. This overlay forces a "rotate back"
+     notice in landscape so the layout never has to handle wide aspect ratios. */
+  .rotate-lock{display:none;position:fixed;inset:0;z-index:9999;background:var(--bg);
+    color:var(--text);align-items:center;justify-content:center;flex-direction:column;
+    gap:18px;padding:32px;text-align:center;font-family:'DM Sans',sans-serif}
+  .rotate-lock-icon{font-size:64px;animation:rotate-hint 2.2s ease-in-out infinite}
+  .rotate-lock-title{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:.06em;color:var(--gold)}
+  .rotate-lock-body{font-size:14px;color:var(--muted);line-height:1.5;max-width:280px}
+  @keyframes rotate-hint{
+    0%,100%{transform:rotate(-90deg)}
+    50%{transform:rotate(0deg)}
+  }
+  @media screen and (orientation: landscape) and (max-height: 500px){
+    .rotate-lock{display:flex}
+    #app{display:none}
+  }
 </style>
 </head>
 <body>
+<div class="rotate-lock" role="alert" aria-live="polite">
+  <div class="rotate-lock-icon">📱</div>
+  <div class="rotate-lock-title">Please Rotate</div>
+  <div class="rotate-lock-body">RPS Arena is designed for portrait mode. Rotate your device upright to continue.</div>
+</div>
 <div id="app">
   <div class="header">
     <div class="logo-wrap" onclick="showView('profile');renderProfile()">
@@ -608,10 +631,6 @@
         <div class="back-bar">
           <button onclick="hideLobbySections()">← Back</button>
           <div style="font-weight:700">Find PvP Match</div>
-        </div>
-        <div class="online-status-row">
-          <span class="online-status-dot" id="online-status-dot"></span>
-          <span id="online-status-text">Connecting…</span>
         </div>
         <div class="pvp-info">
           <div class="pvp-info-left">
@@ -849,17 +868,6 @@
         <button onclick="showView('lobby')">← Back</button>
         <div style="font-weight:700">Friends</div>
       </div>
-      <div class="section-title">Your Friend Code</div>
-      <div class="my-friend-code-row">
-        <div class="my-friend-code-box" id="my-friend-code">—</div>
-        <button class="my-friend-code-copy" onclick="copyFriendCode()">Copy</button>
-      </div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:6px;line-height:1.4">Share your code with a friend, and paste theirs below to add a real online player.</div>
-      <div class="add-friend-row">
-        <input type="text" class="name-input" id="friend-code-input" maxlength="36" placeholder="Add by friend code" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
-        <button class="find-btn" style="padding:11px 16px;width:auto;font-size:13px" onclick="addFriendByCode()">Add</button>
-      </div>
-      <div class="section-title" style="margin-top:10px">Add Local Demo Friend</div>
       <div class="add-friend-row">
         <input type="text" class="name-input" id="friend-input" maxlength="16" placeholder="Add friend by username" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
         <button class="find-btn" style="padding:11px 16px;width:auto;font-size:13px" onclick="addFriend()">Add</button>
@@ -895,7 +903,7 @@
       </div>
       <div class="section-title" style="margin-top:6px">Owned Emojis (<span id="fp-collection-count">0</span>)</div>
       <div id="fp-collection"></div>
-      <button id="fp-vs-btn" style="margin-top:10px;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:12px;cursor:pointer;font-size:14px;font-weight:700;letter-spacing:.04em">⚔ Request Match (▣ 1)</button>
+      <button id="fp-vs-btn" style="margin-top:10px;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:12px;cursor:pointer;font-size:14px;font-weight:700;letter-spacing:.04em">⚔ Request Match (Free)</button>
       <button id="fp-remove-btn" style="margin-top:8px;background:none;border:1px solid var(--danger);color:var(--danger);border-radius:10px;padding:11px;cursor:pointer;font-size:13px;font-weight:600">Remove Friend</button>
     </div>
   </div>
@@ -912,21 +920,13 @@
     <div class="hpm-section-title">Stats</div>
     <div class="profile-stats" id="hpm-stats"></div>
     <div id="hpm-last" class="hpm-last"></div>
+    <div id="hpm-rounds-wrap" style="display:none">
+      <div class="hpm-section-title">Round-by-Round</div>
+      <div class="pick-history" id="hpm-rounds"></div>
+    </div>
     <div class="hpm-btns">
       <button class="btn-cancel hpm-btn" onclick="closeHistoryPlayerModal()">Close</button>
       <button class="btn-confirm hpm-btn" id="hpm-add-btn" onclick="addFriendFromHistoryModal()">Add Friend</button>
-    </div>
-  </div>
-</div>
-
-<!-- INCOMING MATCH INVITE MODAL -->
-<div class="modal-overlay" id="invite-modal">
-  <div class="modal">
-    <h3>Match Request</h3>
-    <div id="invite-body" style="text-align:center;font-size:13px;line-height:1.6"></div>
-    <div class="modal-btns">
-      <button class="btn-cancel" onclick="declineIncomingInvite()">Decline</button>
-      <button class="btn-confirm" onclick="acceptIncomingInvite()">Accept</button>
     </div>
   </div>
 </div>
@@ -1037,15 +1037,8 @@
 
 <div class="toast" id="toast"></div>
 
-<!-- Firebase (compat SDK — no build step needed). Real online play requires firebase-config.js
-     to be filled in with a real project config; otherwise the app quietly falls back to the
-     local bot-simulation, exactly as before. See FIREBASE_SETUP.md. -->
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="emoji-catalog.js"></script>
-<script src="firebase-config.js"></script>
-<script src="multiplayer.js"></script>
+<script src="net.js"></script>
 <script src="app.js"></script>
 <script>
 if('serviceWorker' in navigator){

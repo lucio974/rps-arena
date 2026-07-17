@@ -1,4 +1,4 @@
-/* RPS Arena - PWA app logic v4 (online multiplayer) */
+/* RPS Arena - PWA app logic v3 */
 
 const BOT_NAMES = [
   'undefeated','ultimate champion','worthy opponent','+aura','cant guess me',
@@ -70,7 +70,7 @@ const DEFAULT_STATE = {
   featuredDate: null,
   featuredBucket: null,  // 6-hour rotation key
   featuredEmojis: [],
-  // Friends list (cosmetic only, or real online-linked friends via `uid`)
+  // Friends list (cosmetic only)
   friends: [],
   // Streak run state (persistent for a current run)
   currentStreakBot: null,
@@ -86,9 +86,29 @@ let runtime = {
   modalCb: null,
   shopCat: 'all',
   streakState: null,
-  online: null,           // {matchId, role, round} while in a real online match, or {searching:true} while queued
-  awaitingInvite: null,   // friend object while waiting for their invite response
+  netActive: false,   // true while playing a real networked PvP match
 };
+
+/* ---- REAL PVP NETWORKING ----
+   Wires the NetClient (net.js) round results / disconnects into the game loop.
+   Falls back to local simulated matchmaking if the relay is unreachable. */
+NetClient.onRoundResult((msg) => {
+  if (!runtime.netActive) return;
+  const g = runtime.gameState;
+  if (!g || g.done) return;
+  setTimeout(() => revealRound(msg.you, msg.opp), 300);
+});
+
+NetClient.onOpponentLeft(() => {
+  if (!runtime.netActive) return;
+  const g = runtime.gameState;
+  runtime.netActive = false;
+  if (g && !g.done) {
+    toast('Opponent disconnected — you win by default');
+    g.scoreYou = Math.ceil(g.bo / 2);
+    endGame(g);
+  }
+});
 
 /* ---- THEME ----
    The brand accent color (--gold) is user-customizable. Presets cover the
@@ -477,26 +497,6 @@ function toast(msg, opts) {
   }
 }
 
-/* ---- ONLINE STATUS UI ---- */
-function updateOnlineStatusUI(status) {
-  const dot = document.getElementById('online-status-dot');
-  const text = document.getElementById('online-status-text');
-  if (!dot || !text) return;
-  if (status === 'online') {
-    dot.style.background = 'var(--success)';
-    text.textContent = 'Online — matched with real players';
-    text.style.color = 'var(--success)';
-  } else if (status === 'connecting') {
-    dot.style.background = 'var(--gold)';
-    text.textContent = 'Connecting…';
-    text.style.color = 'var(--muted)';
-  } else {
-    dot.style.background = 'var(--muted)';
-    text.textContent = 'Offline mode — playing vs bots (host asked to set up Firebase)';
-    text.style.color = 'var(--muted)';
-  }
-}
-
 /* PvP single match info card */
 function renderPvpInfo() {
   const t = PVP_TIER;
@@ -522,54 +522,38 @@ function startFindMatch() {
   document.getElementById('pvp-searching').style.display = 'block';
   document.getElementById('search-entry-display').textContent = tier.entry + (tier.entry>1?' tokens':' token');
 
-  if (mp.ready) {
-    runtime.online = { searching: true };
-    mpFindMatch((info) => {
-      if (!runtime.online || !runtime.online.searching) return; // cancelled meanwhile
-      if (!info) {
-        toast('Matchmaking failed — refunding, playing vs bot instead');
-        state.balance += tier.entry; updateBalance();
-        runtime.online = null;
-        startFindMatchLocal(tier);
-        return;
-      }
-      runtime.online = { matchId: info.matchId, role: info.role, round: 1 };
-      startGame('pvp', tier.entry, tier.prize, info.opponent.username || 'Player', info.opponent.avatar || '🤖', info.bo || 5, info.opponent.elo || 1000);
-    }, () => {
-      runtime.online = null;
-      startFindMatchLocal(tier);
-    });
-  } else {
-    runtime.online = null;
-    startFindMatchLocal(tier);
-  }
-}
+  runtime.searchToken = {}; // identity token to guard against stale callbacks after cancel
+  const myToken = runtime.searchToken;
+  let settled = false;
 
-function startFindMatchLocal(tier) {
+  // Fallback to a local bot if the relay doesn't find/confirm a match in time.
   runtime.searchTimer = setTimeout(() => {
-    // For PvP, randomize opponent ELO near the player's rating to feel like real matchmaking
+    if (settled || runtime.searchToken !== myToken) return;
+    settled = true;
+    NetClient.cancelFind();
     const oppElo = randomOppEloNear(state.elo);
     const oppEmoji = randomBotEmoji();
+    runtime.netActive = false;
     startGame('pvp', tier.entry, tier.prize, botName(), oppEmoji, tier.bo, oppElo);
-  }, Math.random() * 2000 + 1200);
+  }, 7000);
+
+  NetClient.findMatch(
+    { name: state.username, avatar: state.avatar, elo: state.elo },
+    (opponent) => {
+      if (settled || runtime.searchToken !== myToken) return;
+      settled = true;
+      clearTimeout(runtime.searchTimer);
+      runtime.netActive = true;
+      startGame('pvp', tier.entry, tier.prize, opponent.name, opponent.avatar || '🤖', tier.bo, opponent.elo);
+    }
+  );
 }
 
 function cancelSearch() {
-  if (runtime.awaitingInvite) {
-    mpCancelInvite();
-    state.balance += PVP_TIER.entry; updateBalance();
-    document.getElementById('pvp-searching').style.display = 'none';
-    runtime.awaitingInvite = null;
-    showView('friends'); renderFriends();
-    toast('Invite cancelled — entry refunded');
-    return;
-  }
-  if (runtime.online && runtime.online.searching) {
-    mpCancelSearch();
-  } else {
-    clearTimeout(runtime.searchTimer);
-  }
-  runtime.online = null;
+  clearTimeout(runtime.searchTimer);
+  runtime.searchToken = {}; // invalidate any in-flight match callback
+  NetClient.cancelFind();
+  runtime.netActive = false;
   state.balance += PVP_TIER.entry; updateBalance();
   document.getElementById('pvp-searching').style.display = 'none';
   document.getElementById('lobby-pvp').style.display = 'flex';
@@ -589,7 +573,7 @@ function startGame(mode, entry, prize, oppN, oppAvatar='🤖', bo=3, oppElo=1000
   document.getElementById('score-you').textContent = 0;
   document.getElementById('score-opp').textContent = 0;
   document.getElementById('stake-label').textContent = entry > 0
-    ? entry + ' token entry' + (runtime.online ? ' · Online' : '')
+    ? entry + ' token entry'
     : (mode === 'streak' ? 'Streak Run' : 'Free play');
   const winThreshold = Math.ceil(bo / 2);
   document.getElementById('round-label').textContent = 'First to ' + winThreshold + ' wins';
@@ -630,149 +614,94 @@ function startGame(mode, entry, prize, oppN, oppAvatar='🤖', bo=3, oppElo=1000
   showView('game');
 }
 
-// Dispatcher — routes to the real online round sync when in a live match,
-// otherwise plays out instantly against the local bot logic (unchanged).
 function play(choice) {
-  if (runtime.online && runtime.online.matchId) { playOnline(choice); return; }
-  playLocal(choice);
-}
-
-function playLocal(choice) {
   const g = runtime.gameState; if (!g || g.done) return;
   ['btn-rock','btn-paper','btn-scissors'].forEach(id => document.getElementById(id).disabled = true);
   const emojis = SIGNS;
-  const oppChoice = rps();
-
-  // Track picks for this match (visual history) and globally (profile stats)
-  if (!g.youPicks) g.youPicks = [];
-  if (!g.oppPicks) g.oppPicks = [];
-  g.youPicks.push(choice);
-  g.oppPicks.push(oppChoice);
-  if (choice === 'rock')     state.pickRock = (state.pickRock || 0) + 1;
-  if (choice === 'paper')    state.pickPaper = (state.pickPaper || 0) + 1;
-  if (choice === 'scissors') state.pickScissors = (state.pickScissors || 0) + 1;
 
   const youEl = document.getElementById('choice-you');
-  const oppEl = document.getElementById('choice-opp');
   youEl.textContent = emojis[choice];
   youEl.classList.add('reveal');
   if (navigator.vibrate) navigator.vibrate(8);
 
-  setTimeout(() => {
-    oppEl.textContent = emojis[oppChoice];
-    oppEl.classList.add('reveal');
-    const rr = document.getElementById('round-result');
-    let outcome; // 'W' | 'L' | 'D'
-    if (choice === oppChoice) {
-      rr.textContent = 'DRAW'; rr.className = 'choice-result draw'; outcome = 'D';
-      // Round-level draw counter (used by What a Read challenge)
-      state.drawRounds = (state.drawRounds || 0) + 1;
-      // Per-match draw count (used by Lightyears Ahead hidden achievement)
-      g.matchDraws = (g.matchDraws || 0) + 1;
-    }
-    else if (beats(choice, oppChoice)) { g.scoreYou++; rr.textContent = 'WIN'; rr.className = 'choice-result win'; outcome = 'W'; if(navigator.vibrate)navigator.vibrate([20,30,20]); }
-    else { g.scoreOpp++; rr.textContent = 'LOSE'; rr.className = 'choice-result lose'; outcome = 'L'; if(navigator.vibrate)navigator.vibrate(40); }
-    if (!g.outcomes) g.outcomes = [];
-    g.outcomes.push(outcome);
-    document.getElementById('score-you').textContent = g.scoreYou;
-    document.getElementById('score-opp').textContent = g.scoreOpp;
-    renderPickHistory(g);
-    const winThreshold = Math.ceil(g.bo / 2);
-    // Match ends ONLY when one side reaches the win threshold.
-    // Draws extend the match past the original `bo` round cap if necessary.
-    const over = g.scoreYou >= winThreshold || g.scoreOpp >= winThreshold;
-    if (over) {
-      setTimeout(() => endGame(g), 700);
-    } else {
-      g.round++;
-      document.getElementById('round-info').textContent = 'Round ' + g.round + ' — first to ' + Math.ceil(g.bo / 2) + ' wins';
-      setTimeout(() => {
-        youEl.textContent = '?'; youEl.classList.remove('reveal');
-        oppEl.textContent = '?'; oppEl.classList.remove('reveal');
-        rr.textContent = '';
-        ['btn-rock','btn-paper','btn-scissors'].forEach(id => document.getElementById(id).disabled = false);
-      }, 850);
-    }
-  }, 450);
+  if (runtime.netActive) {
+    // Real match: send the pick and wait for the opponent's real pick to come
+    // back over the socket (handled by the NetClient.onRoundResult wiring above).
+    NetClient.sendPick(choice);
+  } else {
+    const oppChoice = rps();
+    setTimeout(() => revealRound(choice, oppChoice), 450);
+  }
 }
 
-// Real online round: submit our pick via commit-reveal, wait for the opponent's,
-// then resolve identically to the local flow once both are revealed.
-function playOnline(choice) {
+// Resolves and displays a round once both picks are known — either instantly
+// (local bot, via a fixed delay for feel) or once the relay confirms the
+// opponent's real pick for networked PvP.
+function revealRound(choice, oppChoice) {
   const g = runtime.gameState; if (!g || g.done) return;
-  ['btn-rock','btn-paper','btn-scissors'].forEach(id => document.getElementById(id).disabled = true);
+  const emojis = SIGNS;
+  const youEl = document.getElementById('choice-you');
+  const oppEl = document.getElementById('choice-opp');
+
+  // Track picks for this match (visual history) and globally (profile stats).
+  // Friendly matches don't pollute profile stats or challenge progress.
   if (!g.youPicks) g.youPicks = [];
   if (!g.oppPicks) g.oppPicks = [];
-  if (choice === 'rock')     state.pickRock = (state.pickRock || 0) + 1;
-  if (choice === 'paper')    state.pickPaper = (state.pickPaper || 0) + 1;
-  if (choice === 'scissors') state.pickScissors = (state.pickScissors || 0) + 1;
+  g.youPicks.push(choice);
+  g.oppPicks.push(oppChoice);
+  if (runtime.currentMode !== 'friend') {
+    if (choice === 'rock')     state.pickRock = (state.pickRock || 0) + 1;
+    if (choice === 'paper')    state.pickPaper = (state.pickPaper || 0) + 1;
+    if (choice === 'scissors') state.pickScissors = (state.pickScissors || 0) + 1;
+  }
 
-  const youEl = document.getElementById('choice-you');
-  youEl.textContent = SIGNS[choice];
-  youEl.classList.add('reveal');
-  if (navigator.vibrate) navigator.vibrate(8);
-  const rr = document.getElementById('round-result');
-  rr.textContent = 'Waiting for opponent…';
-  rr.className = 'choice-result';
-
-  const round = runtime.online.round;
-  mpSubmitPick(round, choice, (r, myPick, oppPick) => {
-    if (!runtime.online || runtime.online.round !== round) return; // stale callback
-    resolveOnlineRound(g, myPick, oppPick);
-  });
-}
-
-function resolveOnlineRound(g, myPick, oppPick) {
-  g.youPicks.push(myPick);
-  g.oppPicks.push(oppPick);
-  const oppEl = document.getElementById('choice-opp');
-  oppEl.textContent = SIGNS[oppPick];
+  oppEl.textContent = emojis[oppChoice];
   oppEl.classList.add('reveal');
   const rr = document.getElementById('round-result');
-  let outcome;
-  if (myPick === oppPick) {
+  let outcome; // 'W' | 'L' | 'D'
+  if (choice === oppChoice) {
     rr.textContent = 'DRAW'; rr.className = 'choice-result draw'; outcome = 'D';
-    state.drawRounds = (state.drawRounds || 0) + 1;
+    // Round-level draw counter (used by What a Read challenge) — friendly matches skip stats
+    if (runtime.currentMode !== 'friend') {
+      state.drawRounds = (state.drawRounds || 0) + 1;
+    }
+    // Per-match draw count (used by Lightyears Ahead hidden achievement)
     g.matchDraws = (g.matchDraws || 0) + 1;
-  } else if (beats(myPick, oppPick)) {
-    g.scoreYou++; rr.textContent = 'WIN'; rr.className = 'choice-result win'; outcome = 'W';
-    if (navigator.vibrate) navigator.vibrate([20, 30, 20]);
-  } else {
-    g.scoreOpp++; rr.textContent = 'LOSE'; rr.className = 'choice-result lose'; outcome = 'L';
-    if (navigator.vibrate) navigator.vibrate(40);
   }
+  else if (beats(choice, oppChoice)) { g.scoreYou++; rr.textContent = 'WIN'; rr.className = 'choice-result win'; outcome = 'W'; if(navigator.vibrate)navigator.vibrate([20,30,20]); }
+  else { g.scoreOpp++; rr.textContent = 'LOSE'; rr.className = 'choice-result lose'; outcome = 'L'; if(navigator.vibrate)navigator.vibrate(40); }
   if (!g.outcomes) g.outcomes = [];
   g.outcomes.push(outcome);
   document.getElementById('score-you').textContent = g.scoreYou;
   document.getElementById('score-opp').textContent = g.scoreOpp;
   renderPickHistory(g);
   const winThreshold = Math.ceil(g.bo / 2);
+  // Match ends ONLY when one side reaches the win threshold.
+  // Draws extend the match past the original `bo` round cap if necessary.
   const over = g.scoreYou >= winThreshold || g.scoreOpp >= winThreshold;
   if (over) {
     setTimeout(() => endGame(g), 700);
   } else {
-    runtime.online.round++;
     g.round++;
-    document.getElementById('round-info').textContent = 'Round ' + g.round + ' — first to ' + winThreshold + ' wins';
+    document.getElementById('round-info').textContent = 'Round ' + g.round + ' — first to ' + Math.ceil(g.bo / 2) + ' wins';
     setTimeout(() => {
-      document.getElementById('choice-you').textContent = '?';
-      document.getElementById('choice-you').classList.remove('reveal');
-      document.getElementById('choice-opp').textContent = '?';
-      document.getElementById('choice-opp').classList.remove('reveal');
-      document.getElementById('round-result').textContent = '';
+      youEl.textContent = '?'; youEl.classList.remove('reveal');
+      oppEl.textContent = '?'; oppEl.classList.remove('reveal');
+      rr.textContent = '';
       ['btn-rock','btn-paper','btn-scissors'].forEach(id => document.getElementById(id).disabled = false);
     }, 850);
   }
 }
 
 // Render a small row showing past picks for this match (per side, dimmed by outcome).
-function renderPickHistory(g) {
-  const wrap = document.getElementById('pick-history');
-  if (!wrap) return;
+// Shared renderer: builds the "You / Opponent" pick-row HTML from raw pick +
+// outcome arrays. Used by the live in-match pick-history widget AND the
+// history-tab "Round-by-Round" modal section (static, post-match).
+function buildPickHistoryHtml(youPicks, oppPicks, outcomes, oppLabel) {
   const emojis = SIGNS;
-  const youPicks = g.youPicks || [];
-  const oppPicks = g.oppPicks || [];
-  const outcomes = g.outcomes || [];
+  youPicks = youPicks || [];
+  oppPicks = oppPicks || [];
+  outcomes = outcomes || [];
   // outcomes[i] is YOUR result in round i (W/L/D). For your row, color by outcome;
   // for opponent row, flip (your W = their L).
   const you = youPicks.map((p, i) => {
@@ -786,10 +715,16 @@ function renderPickHistory(g) {
     const cls = flipped === 'W' ? 'win' : flipped === 'L' ? 'lose' : flipped === 'D' ? 'draw' : '';
     return `<span class="pick-cell ${cls}" title="Round ${i+1}">${emojis[p] || '?'}</span>`;
   }).join('');
-  wrap.innerHTML = `
+  return `
     <div class="pick-row" aria-label="Your past picks"><span class="pick-row-label">You</span><div class="pick-row-cells">${you}</div></div>
-    <div class="pick-row" aria-label="Opponent past picks"><span class="pick-row-label">${(g.opp || 'Opp').slice(0,10)}</span><div class="pick-row-cells">${opp}</div></div>
+    <div class="pick-row" aria-label="Opponent past picks"><span class="pick-row-label">${(oppLabel || 'Opp').slice(0,10)}</span><div class="pick-row-cells">${opp}</div></div>
   `;
+}
+
+function renderPickHistory(g) {
+  const wrap = document.getElementById('pick-history');
+  if (!wrap) return;
+  wrap.innerHTML = buildPickHistoryHtml(g.youPicks, g.oppPicks, g.outcomes, g.opp);
 }
 
 function calculateEloChange(playerElo, oppElo, won, draw) {
@@ -822,8 +757,25 @@ function closeResultPopup() {
 
 function endGame(g) {
   g.done = true;
+  if (runtime.currentMode === 'pvp' && runtime.netActive) {
+    NetClient.leaveMatch();
+    runtime.netActive = false;
+  }
   const won = g.scoreYou > g.scoreOpp;
   const draw = g.scoreYou === g.scoreOpp;
+
+  // Friend matches are pure social play: no token, ELO, history, win/loss, or
+  // games-played side effects. Just show a result popup and bounce back.
+  if (runtime.currentMode === 'friend') {
+    let type, title, detail;
+    if (won)        { type = 'win';  title = 'YOU WIN!'; detail = 'Friendly match — no rewards.'; }
+    else if (draw)  { type = 'draw'; title = 'DRAW';     detail = 'Friendly match — no rewards.'; }
+    else            { type = 'lose'; title = 'DEFEATED'; detail = 'Friendly match — no rewards.'; }
+    if (won && navigator.vibrate) navigator.vibrate([20, 40, 20]);
+    showResultPopup(type, { title, detail });
+    return;
+  }
+
   state.games++;
   let delta = 0;
   let eloDelta = 0;
@@ -847,6 +799,22 @@ function endGame(g) {
       title = 'YOU WIN!';
       detail = `+${g.prize} tokens added to wallet`;
       if (navigator.vibrate) navigator.vibrate([30, 50, 30, 50, 30]);
+
+      // ── Token bonus rolls (mutually exclusive): 2% → 25 tokens, else 4% → 10 tokens ──
+      {
+        const r = Math.random();
+        if (r < 0.02) {
+          state.balance += 25;
+          state.earned += 25;
+          setTimeout(() => toast('💰 +25 token bonus!', { reward: true }), 1300);
+          if (navigator.vibrate) navigator.vibrate([20, 40, 20, 40, 60]);
+        } else if (r < 0.06) {
+          state.balance += 10;
+          state.earned += 10;
+          setTimeout(() => toast('🪙 +10 token bonus!', { reward: true }), 1300);
+          if (navigator.vibrate) navigator.vibrate([15, 30, 15]);
+        }
+      }
 
       // ── Hidden achievement: Lightyears Ahead (10+ draws in this match AND won) ──
       if (!state.lightyearsAchieved && (g.matchDraws || 0) >= 10) {
@@ -876,15 +844,14 @@ function endGame(g) {
         if (navigator.vibrate) navigator.vibrate([40, 60, 40, 60, 100]);
       }
 
-      // ── 0.001% chance: +AURA (formerly "Broken Feature ofc") ──
-      // Lifetime once, survives reset. -1000 tokens, grants 🔖, secret reset re-enable.
+      // ── 0.001% chance: +AURA — free legendary emoji drop ──
+      // Lifetime once, survives reset. Grants 🔖, secret reset re-enable.
       if (!state.brokenFeatureTriggered && Math.random() < 0.00001) {
         state.brokenFeatureTriggered = true;
-        state.balance -= 1000;            // negative balance allowed
         if (!state.ownedEmojis.includes('🔖')) state.ownedEmojis.push('🔖');
         // Secret reset re-enable (no UI announcement)
         state.hasReset = false;
-        setTimeout(() => toast('🔖 +aura — -1000 tokens. Check profile.', { reward: true }), 1900);
+        setTimeout(() => toast('🔖 +aura unlocked. Check profile.', { reward: true }), 1900);
         if (navigator.vibrate) navigator.vibrate([100, 80, 100, 80, 200]);
       }
     } else if (draw) {
@@ -909,19 +876,12 @@ function endGame(g) {
       opp: g.opp, oppAvatar: g.oppAvatar,
       result: won ? 'W' : draw ? 'D' : 'L',
       score: g.scoreYou + '-' + g.scoreOpp,
-      eloDelta, mode: runtime.online ? 'PvP Online' : 'PvP',
+      eloDelta, mode: 'PvP',
       youElo: state.elo, oppElo: g.oppElo,
+      youPicks: g.youPicks || [], oppPicks: g.oppPicks || [], outcomes: g.outcomes || [],
       time: new Date().toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
     });
     if (state.history.length > 100) state.history = state.history.slice(0, 100);
-
-    // Clean up the real-time match: push our updated ELO/avatar to presence and
-    // tear down listeners now that the match is fully resolved.
-    if (runtime.online) {
-      mpLeaveMatch(false);
-      if (mp.ready) mpPushProfile();
-      runtime.online = null;
-    }
 
     updateBalance();
     saveState();
@@ -956,6 +916,7 @@ function endGame(g) {
         result: won ? 'W' : 'L',
         score: g.scoreYou + '-' + g.scoreOpp,
         eloDelta: 0, mode: 'Tourney',
+        youPicks: g.youPicks || [], oppPicks: g.oppPicks || [], outcomes: g.outcomes || [],
         time: new Date().toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
       });
       if (state.history.length > 100) state.history = state.history.slice(0, 100);
@@ -1096,6 +1057,7 @@ function leaveGame() {
   if (isForfeit && runtime.currentMode === 'pvp') {
     // Forfeit a PvP match: count it as a full loss. No token refund (entry already deducted).
     // Apply ELO loss as if you lost the match.
+    if (runtime.netActive) { NetClient.leaveMatch(); runtime.netActive = false; }
     g.done = true;
     state.games++;
     state.losses = (state.losses || 0) + 1;
@@ -1108,18 +1070,12 @@ function leaveGame() {
       opp: g.opp, oppAvatar: g.oppAvatar,
       result: 'L',
       score: 'Forfeit',
-      eloDelta, mode: runtime.online ? 'PvP Online' : 'PvP',
+      eloDelta, mode: 'PvP',
       youElo: state.elo, oppElo: g.oppElo,
+      youPicks: g.youPicks || [], oppPicks: g.oppPicks || [], outcomes: g.outcomes || [],
       time: new Date().toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
     });
     if (state.history.length > 100) state.history = state.history.slice(0, 100);
-
-    // Notify the opponent (if any) that we forfeited, and tear down listeners.
-    if (runtime.online) {
-      mpLeaveMatch(true);
-      if (mp.ready) mpPushProfile();
-      runtime.online = null;
-    }
 
     saveState();
     updateBalance();
@@ -1133,6 +1089,13 @@ function leaveGame() {
     // Forfeit a tournament match: register as elimination via the existing flow.
     g.done = true;
     onTourneyMatchContinue(false);
+    return;
+  }
+
+  if (isForfeit && runtime.currentMode === 'friend') {
+    // Forfeit a friend match: no penalty, just exit cleanly.
+    g.done = true;
+    showView('lobby');
     return;
   }
 
@@ -1718,7 +1681,6 @@ function saveName() {
   document.getElementById('name-modal').classList.remove('open');
   updateHeader();
   renderProfile();
-  if (mp.ready) mpPushProfile();
   toast('Name saved');
 }
 
@@ -1763,7 +1725,6 @@ function executeReset() {
   renderHistory();
   initTourneys();
   refreshFeatured();
-  if (mp.ready) mpPushProfile();
   toast('Progress reset (emojis kept)');
   showView('lobby');
 }
@@ -1789,7 +1750,7 @@ function renderFeatured() {
   el.innerHTML = state.featuredEmojis.map(e => {
     const item = getEmojiInfo(e);
     if (!item) return '';
-    return shopItemHtml(item);
+    return shopItemHtml(item, true);   // featured = half price
   }).join('');
 }
 
@@ -2090,7 +2051,6 @@ function claimChallenge(id) {
   updateBalance();
   updateHeader();
   renderShop();
-  if (mp.ready) mpPushProfile();
   toast(c.emoji + ' ' + c.name + ' unlocked & equipped!' + bonusMsg, { reward: true });
   if (navigator.vibrate) navigator.vibrate([30, 50, 30, 50, 60]);
 }
@@ -2101,7 +2061,6 @@ function equipEmoji(e) {
   state.avatar = e;
   saveState();
   updateHeader();
-  if (mp.ready) mpPushProfile();
   // Refresh whichever owned-emoji view is currently visible
   const shopActive = document.getElementById('view-shop').classList.contains('active');
   const profileActive = document.getElementById('view-profile').classList.contains('active');
@@ -2110,15 +2069,27 @@ function equipEmoji(e) {
   toast('Equipped');
 }
 
-function shopItemHtml(item) {
+// Featured shop items are sold at a discount. Rare emojis get a flat 10-token
+// price (overriding the 50% calc); other rarities are half-off, floor-rounded.
+// Pricing tiers in catalog: common=10, rare=25, epic=60, legendary=150
+//   → featured: common=5, rare=10, epic=30, legendary=75
+function getEffectivePrice(item, featured) {
+  if (!featured) return item.price;
+  if (item.rarity === 'rare') return 10;       // special override
+  return Math.floor(item.price / 2);
+}
+
+function shopItemHtml(item, featured) {
   const owned = state.ownedEmojis.includes(item.e);
   const equipped = state.avatar === item.e;
+  const price = getEffectivePrice(item, featured);
   let action;
   if (equipped) action = '<div class="shop-action equipped">EQUIPPED</div>';
   else if (owned) action = '<div class="shop-action owned">OWNED</div>';
-  else action = `<div class="shop-action buy">▣ ${item.price}</div>`;
+  else action = `<div class="shop-action buy">▣ ${price}</div>`;
+  const featuredAttr = featured ? ',true' : '';
   return `
-    <div class="shop-item ${equipped ? 'equipped' : ''}" onclick="shopAction('${item.e}')">
+    <div class="shop-item ${equipped ? 'equipped' : ''}" onclick="shopAction('${item.e}'${featuredAttr})">
       <div class="shop-emoji">${item.e}</div>
       <div class="shop-name">${item.name}</div>
       ${action}
@@ -2142,13 +2113,41 @@ function getChallengeLockedEmojis() {
   return set;
 }
 
-// Lookup table of challenge emojis -> their challenge def (for name + forced rarity).
-// Only emoji-reward challenges produce overrides; token-reward icons stay catalog-resolved.
+// Unicode-style names for challenge emojis that aren't in the regular catalog.
+// Used when displaying owned challenge emojis in the shop, equip toasts, etc.
+// The Secret Challenges section uses the challenge's `name` field directly and
+// is unaffected by this map.
+const CHALLENGE_EMOJI_NAMES = {
+  '🧬': 'DNA',
+  '🧇': 'Waffle',
+  '🛸': 'UFO',
+  '🃏': 'Joker',
+  '🐣': 'Hatching Chick',
+  '🪼': 'Jellyfish',
+  '🩻': 'X-Ray',
+  '🤓': 'Nerd Face',
+  '🧠': 'Brain',
+  '🪤': 'Mousetrap',
+  '🔖': 'Bookmark',
+  '🥀': 'Wilted Flower',
+  '🪕': 'Banjo',
+  '✂️': 'Scissors',
+  '👽': 'Alien',
+  '👾': 'Space Invader',
+  '🗿': 'Moai',
+};
+
+// Lookup table of challenge emojis -> their display record (real emoji name,
+// forced legendary rarity). Only emoji-reward challenges produce overrides;
+// token-reward icons stay catalog-resolved.
 function getChallengeEmojiOverrides() {
   const map = {};
   for (const c of CHALLENGE_DEFS) {
     if (c.rewardType === 'tokens') continue;
-    map[c.emoji] = { e: c.emoji, name: c.name, cat: 'challenge', price: 0, rarity: 'legendary' };
+    const catalogEntry = EMOJI_CATALOG.find(x => x.e === c.emoji);
+    // Prefer catalog name, then the curated challenge-emoji name table, then fall back to challenge name.
+    const displayName = (catalogEntry && catalogEntry.name) || CHALLENGE_EMOJI_NAMES[c.emoji] || c.name;
+    map[c.emoji] = { e: c.emoji, name: displayName, cat: 'challenge', price: 0, rarity: 'legendary' };
   }
   return map;
 }
@@ -2234,7 +2233,7 @@ function renderShopBrowse() {
   container.innerHTML = sections || emptyMsg;
 }
 
-function shopAction(emoji) {
+function shopAction(emoji, featured) {
   const item = getEmojiInfo(emoji);
   if (!item) return;
   // Challenge-locked emojis can't be purchased — they're claim-only via the challenges section.
@@ -2251,22 +2250,22 @@ function shopAction(emoji) {
     saveState();
     updateHeader();
     renderShop();
-    if (mp.ready) mpPushProfile();
     toast('Equipped ' + item.name);
     return;
   }
-  if (state.balance < item.price) { toast('Not enough tokens'); return; }
+  const price = getEffectivePrice(item, featured);
+  if (state.balance < price) { toast('Not enough tokens'); return; }
+  const priceLine = `<strong style="color:var(--gold)">${price} token${price>1?'s':''}</strong>`;
   openModal('Buy ' + item.name + '?',
-    `<div style="font-size:48px;text-align:center;margin:8px 0">${item.e}</div><strong>${item.name}</strong><br>Price: <strong style="color:var(--gold)">${item.price} token${item.price>1?'s':''}</strong><br>Rarity: <strong>${item.rarity}</strong><br>You'll have ${state.balance - item.price} tokens after.`,
+    `<div style="font-size:48px;text-align:center;margin:8px 0">${item.e}</div><strong>${item.name}</strong><br>Price: ${priceLine}<br>Rarity: <strong>${item.rarity}</strong><br>You'll have ${state.balance - price} tokens after.`,
     () => {
-      state.balance -= item.price;
+      state.balance -= price;
       state.ownedEmojis.push(emoji);
       state.avatar = emoji;
       saveState();
       updateBalance();
       updateHeader();
       renderShop();
-      if (mp.ready) mpPushProfile();
       toast('Unlocked & equipped ' + item.name);
     }
   );
@@ -2465,14 +2464,9 @@ function renderLeaderboard() {
 }
 
 /* ---- FRIENDS LIST ---- */
-// Online status for a friend. Real online-linked friends (f.uid set) use live
-// Firebase presence data (kept fresh by mpWatchFriendPresence). Legacy local/NPC
-// friends fall back to a deterministic per-day pseudo-random status.
+// Deterministic online status per friend per day (so it doesn't flicker mid-session
+// but does rotate). Seeded by name+avatar+date.
 function isFriendOnline(f) {
-  if (f.uid) {
-    const p = mp.friendPresence[f.uid];
-    return !!(p && p.online);
-  }
   const seed = _hashStr((f.name || '') + '|' + (f.avatar || '') + '|' + todayKey());
   // ~50% online
   return (seed % 2) === 0;
@@ -2480,24 +2474,14 @@ function isFriendOnline(f) {
 
 function renderFriends() {
   const list = document.getElementById('friends-list');
-  const codeEl = document.getElementById('my-friend-code');
-  if (codeEl) codeEl.textContent = mp.ready ? mpMyCode() : (mp.configured ? 'Connecting…' : 'Offline — Firebase not configured');
-
-  // Keep live presence flowing for any online-linked friends so status badges update in real time.
-  const uids = (state.friends || []).map(f => f.uid).filter(Boolean);
-  mpWatchFriendPresence(uids, () => {
-    if (document.getElementById('view-friends').classList.contains('active')) renderFriends();
-  });
-
   if (!state.friends || state.friends.length === 0) {
-    list.innerHTML = '<div class="empty-state">No friends yet.<br>Add someone by friend code, or a local demo friend below.</div>';
+    list.innerHTML = '<div class="empty-state">No friends yet.<br>Add someone above, or tap a recent opponent in your match history.</div>';
     return;
   }
   list.innerHTML = state.friends.map((f, idx) => {
     const online = isFriendOnline(f);
     const statusClass = online ? 'online' : 'offline';
     const statusText = online ? 'Online' : 'Offline';
-    const linkTag = f.uid ? ' · Online player' : '';
     // Offline friends don't show a vs button — you can't request a match against them.
     const vsBtn = online
       ? `<button class="friend-vs-btn" title="Request match" onclick="event.stopPropagation();requestFriendMatch(${idx})">⚔ vs</button>`
@@ -2507,7 +2491,7 @@ function renderFriends() {
         <div class="friend-avatar">${f.avatar || '🤖'}</div>
         <div class="friend-info">
           <div class="friend-name">${f.name}</div>
-          <div class="friend-meta">Added ${f.addedAt || 'recently'}${linkTag}</div>
+          <div class="friend-meta">Added ${f.addedAt || 'recently'}</div>
         </div>
         <div class="friend-actions">
           ${vsBtn}
@@ -2539,39 +2523,6 @@ function addFriend() {
   renderFriends();
   updateHeader();
   toast('Added ' + name);
-}
-// Add a REAL player as a friend using their friend code (their Firebase UID).
-function addFriendByCode() {
-  const input = document.getElementById('friend-code-input');
-  const code = (input.value || '').trim();
-  if (!code) { toast('Enter a friend code'); return; }
-  if (!mp.ready) { toast('Online features unavailable — ask the host to set up Firebase'); return; }
-  if (code === mp.uid) { toast("That's your own code!"); return; }
-  if ((state.friends || []).some(f => f.uid === code)) { toast('Already in your friends list'); return; }
-  mpLookupPlayer(code, (profile) => {
-    if (!profile) { toast('Code not found — make sure they opened the app at least once'); return; }
-    if (!state.friends) state.friends = [];
-    state.friends.unshift({
-      name: profile.username || 'Player',
-      avatar: profile.avatar || '🤖',
-      uid: code,
-      addedAt: new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
-    });
-    input.value = '';
-    saveState();
-    renderFriends();
-    updateHeader();
-    toast('Added ' + (profile.username || 'Player'));
-  });
-}
-function copyFriendCode() {
-  const code = mpMyCode();
-  if (!code) { toast('Not connected yet — try again in a moment'); return; }
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(code).then(() => toast('Code copied!')).catch(() => toast(code));
-  } else {
-    toast(code);
-  }
 }
 function removeFriend(idx) {
   if (!state.friends || !state.friends[idx]) return;
@@ -2610,6 +2561,11 @@ function showHistoryPlayerModal(name, avatar) {
     <div class="pstat"><div class="pstat-label">Total Games</div><div class="pstat-val">${synth.games}</div></div>
   `;
   document.getElementById('hpm-last').innerHTML = '';
+  // Round-by-round only applies when opened from a specific history row (see
+  // openPlayerProfile). Reset/hide it here so generic opponent lookups
+  // (tournament bracket taps, leaderboard taps) never show stale data.
+  document.getElementById('hpm-rounds-wrap').style.display = 'none';
+  document.getElementById('hpm-rounds').innerHTML = '';
 
   const addBtn = document.getElementById('hpm-add-btn');
   const isFriend = (state.friends || []).some(f => f.name === name);
@@ -2631,6 +2587,26 @@ function openPlayerProfile(historyIdx) {
   // Append last-match line (history-specific context)
   document.getElementById('hpm-last').innerHTML =
     `<strong style="color:var(--text)">Last:</strong> ${h.mode} · ${h.score} · ${h.time}`;
+
+  // Round-by-round breakdown — only available for PvP/Tourney entries saved
+  // after this feature shipped (older entries won't have youPicks/oppPicks).
+  // Streak entries summarize a whole multi-match run, so no single set of
+  // rounds applies there — skip them entirely.
+  const roundsWrap = document.getElementById('hpm-rounds-wrap');
+  const roundsEl = document.getElementById('hpm-rounds');
+  if (h.mode === 'Streak') {
+    roundsWrap.style.display = 'none';
+  } else if (Array.isArray(h.youPicks) && h.youPicks.length > 0) {
+    roundsWrap.style.display = 'block';
+    roundsEl.innerHTML = buildPickHistoryHtml(h.youPicks, h.oppPicks, h.outcomes, h.opp);
+  } else if (Array.isArray(h.youPicks) && h.youPicks.length === 0 && h.score === 'Forfeit') {
+    roundsWrap.style.display = 'block';
+    roundsEl.innerHTML = '<div class="empty-state" style="padding:14px 0">No rounds played — forfeited immediately.</div>';
+  } else {
+    // Older entry saved before round tracking existed — no data to show.
+    roundsWrap.style.display = 'block';
+    roundsEl.innerHTML = '<div class="empty-state" style="padding:14px 0">No round data available for this match.</div>';
+  }
 }
 
 // Open the same window for a tournament opponent (by name only — generate avatar deterministically).
@@ -2868,84 +2844,20 @@ function openFriendProfile(idx) {
   showView('friend-profile');
 }
 
-/* Friend match request. Two paths:
-   - Real online-linked friend (f.uid set): sends a live Firebase invite and waits
-     for them to accept/decline, exactly like a real multiplayer challenge.
-   - Legacy local/demo friend (no uid): plays out the old simulated instant match. */
+/* Friend match request — FREE, no entry/prize, does not affect ELO or stats.
+   Pure social play. The match runs in 'friend' mode so endGame() skips all
+   wallet, ELO, and history side effects. */
 function requestFriendMatch(idx) {
   const f = state.friends && state.friends[idx];
   if (!f) return;
-  const tier = PVP_TIER;
-  if (state.balance < tier.entry) {
-    toast('Not enough tokens! Need ' + tier.entry + '.');
-    return;
-  }
-
-  if (f.uid && mp.ready) {
-    state.balance -= tier.entry;
-    updateBalance();
-    runtime.awaitingInvite = f;
-    hideLobbySections();
-    document.getElementById('pvp-searching').style.display = 'block';
-    document.getElementById('search-entry-display').textContent = 'Waiting for ' + f.name + '…';
-    showView('lobby');
-    mpSendInvite(f.uid, (result, info) => {
-      document.getElementById('pvp-searching').style.display = 'none';
-      runtime.awaitingInvite = null;
-      if (result === 'accepted' && info) {
-        runtime.online = { matchId: info.matchId, role: info.role, round: 1 };
-        startGame('pvp', tier.entry, tier.prize, info.opponent.username || f.name, info.opponent.avatar || f.avatar || '🤖', info.bo || 5, info.opponent.elo || 1000);
-      } else {
-        state.balance += tier.entry; updateBalance();
-        showView('friends'); renderFriends();
-        toast(result === 'declined' ? f.name + ' declined the invite' : 'No response — entry refunded');
-      }
-    });
-    return;
-  }
-
-  // Legacy local/offline friend — simulated instant match (unchanged behavior)
   const synth = getPlayerSyntheticProfile(f.name, f.avatar);
-  state.balance -= tier.entry;
-  updateBalance();
   toast('Match request sent — ' + f.name + ' accepted!');
   if (navigator.vibrate) navigator.vibrate(15);
+  // Brief delay to feel like a real "request → accepted" handshake
   setTimeout(() => {
-    startGame('pvp', tier.entry, tier.prize, f.name, f.avatar || '🤖', tier.bo, synth.elo);
+    // mode='friend', entry=0, prize=0, BO from PVP_TIER for familiar pacing
+    startGame('friend', 0, 0, f.name, f.avatar || '🤖', PVP_TIER.bo, synth.elo);
   }, 600);
-}
-
-/* ---- INCOMING INVITE MODAL ---- */
-let _incomingInvite = null;
-function showIncomingInvite(inv) {
-  _incomingInvite = inv;
-  document.getElementById('invite-body').innerHTML = `
-    <div style="font-size:48px;margin:6px 0">${inv.fromAvatar || '🤖'}</div>
-    <strong>${inv.fromName}</strong> wants to play!<br>
-    <span style="font-size:12px;color:var(--muted)">Ranked match · ${PVP_TIER.entry} token entry</span>
-  `;
-  document.getElementById('invite-modal').classList.add('open');
-  if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
-}
-function acceptIncomingInvite() {
-  if (!_incomingInvite) return;
-  const inv = _incomingInvite;
-  document.getElementById('invite-modal').classList.remove('open');
-  _incomingInvite = null;
-  const tier = PVP_TIER;
-  if (state.balance < tier.entry) { toast('Not enough tokens to accept'); mpDeclineInvite(inv); return; }
-  state.balance -= tier.entry; updateBalance();
-  mpAcceptInvite(inv, (info) => {
-    if (!info) { toast('Failed to join match'); state.balance += tier.entry; updateBalance(); return; }
-    runtime.online = { matchId: info.matchId, role: info.role, round: 1 };
-    startGame('pvp', tier.entry, tier.prize, info.opponent.username || inv.fromName, info.opponent.avatar || inv.fromAvatar || '🤖', info.bo || 5, info.opponent.elo || 1000);
-  });
-}
-function declineIncomingInvite() {
-  if (!_incomingInvite) return;
-  mpDeclineInvite(_incomingInvite);
-  _incomingInvite = null;
-  document.getElementById('invite-modal').classList.remove('open');
 }
 
 function isStandalone() {
@@ -2966,22 +2878,6 @@ updateHeader();
 initTourneys();
 refreshFeatured();
 
-// Wire the multiplayer module's callbacks into the UI, then connect.
-mp.onStatusChange = updateOnlineStatusUI;
-mp.onIncomingInvite = showIncomingInvite;
-mp.onOpponentForfeit = () => {
-  const g = runtime.gameState;
-  if (g && !g.done && runtime.online) {
-    g.scoreYou = Math.ceil(g.bo / 2);
-    toast('Opponent forfeited — you win!');
-    endGame(g);
-  }
-};
-updateOnlineStatusUI('offline');
-mpInit((ok) => {
-  if (ok) mpPushProfile();
-});
-
 if (isIOS() && !isStandalone()) {
   try {
     if (!localStorage.getItem('rps-install-dismissed')) {
@@ -2989,6 +2885,70 @@ if (isIOS() && !isStandalone()) {
     }
   } catch(e) {}
 }
+
+/* ---- SWIPE-TO-SWITCH-TABS ----
+   Horizontal swipe on the view-wrap cycles main tabs. Vertical scroll wins ties.
+   Disabled while in-game (chrome is hidden, and we don't want forfeits via swipe). */
+const TAB_ORDER = ['lobby', 'profile', 'history', 'shop'];
+const TAB_RENDERERS = {
+  lobby:   () => {},
+  profile: () => renderProfile(),
+  history: () => renderHistory(),
+  shop:    () => renderShop(),
+};
+(function setupTabSwipe() {
+  const wrap = document.querySelector('.view-wrap');
+  if (!wrap) return;
+  let startX = 0, startY = 0, tracking = false, moved = false;
+  const SWIPE_MIN = 60;          // px horizontal needed to trigger
+  const SWIPE_RATIO = 1.4;       // |dx| must beat |dy| by this factor
+  function currentTab() {
+    for (const id of TAB_ORDER) {
+      const v = document.getElementById('view-' + id);
+      if (v && v.classList.contains('active')) return id;
+    }
+    return null;
+  }
+  function inGame() {
+    return document.getElementById('app').classList.contains('in-game');
+  }
+  wrap.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    if (inGame()) return;
+    // Don't start swipe-tab tracking on horizontal-scroll surfaces (shop tabs, bracket)
+    if (e.target.closest('.shop-tabs, .bracket-wrap')) return;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    tracking = true;
+    moved = false;
+  }, { passive: true });
+  wrap.addEventListener('touchmove', (e) => {
+    if (!tracking) return;
+    const dx = e.touches[0].clientX - startX;
+    const dy = e.touches[0].clientY - startY;
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) moved = true;
+  }, { passive: true });
+  wrap.addEventListener('touchend', (e) => {
+    if (!tracking) return;
+    tracking = false;
+    if (!moved) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - startX;
+    const dy = t.clientY - startY;
+    if (Math.abs(dx) < SWIPE_MIN) return;
+    if (Math.abs(dx) < Math.abs(dy) * SWIPE_RATIO) return;
+    // Determine direction; left swipe = next tab, right = prev
+    const cur = currentTab();
+    if (!cur) return;
+    const idx = TAB_ORDER.indexOf(cur);
+    if (idx < 0) return;
+    let next;
+    if (dx < 0) next = TAB_ORDER[(idx + 1) % TAB_ORDER.length];
+    else        next = TAB_ORDER[(idx - 1 + TAB_ORDER.length) % TAB_ORDER.length];
+    showView(next);
+    if (TAB_RENDERERS[next]) TAB_RENDERERS[next]();
+  }, { passive: true });
+})();
 
 document.addEventListener('touchmove', (e) => {
   if (e.target.closest('.view-wrap, .bracket-wrap, .shop-tabs')) return;
