@@ -86,6 +86,8 @@ let runtime = {
   modalCb: null,
   shopCat: 'all',
   streakState: null,
+  online: null,           // {matchId, role, round} while in a real online match, or {searching:true} while queued
+  awaitingInvite: null,   // friend object while waiting for their invite response
 };
 
 /* ---- THEME ----
@@ -475,6 +477,26 @@ function toast(msg, opts) {
   }
 }
 
+/* ---- ONLINE STATUS UI ---- */
+function updateOnlineStatusUI(status) {
+  const dot = document.getElementById('online-status-dot');
+  const text = document.getElementById('online-status-text');
+  if (!dot || !text) return;
+  if (status === 'online') {
+    dot.style.background = 'var(--success)';
+    text.textContent = 'Online — matched with real players';
+    text.style.color = 'var(--success)';
+  } else if (status === 'connecting') {
+    dot.style.background = 'var(--gold)';
+    text.textContent = 'Connecting…';
+    text.style.color = 'var(--muted)';
+  } else {
+    dot.style.background = 'var(--muted)';
+    text.textContent = 'Offline mode — playing vs bots';
+    text.style.color = 'var(--muted)';
+  }
+}
+
 /* PvP single match info card */
 function renderPvpInfo() {
   const t = PVP_TIER;
@@ -499,6 +521,43 @@ function startFindMatch() {
   document.getElementById('lobby-pvp').style.display = 'none';
   document.getElementById('pvp-searching').style.display = 'block';
   document.getElementById('search-entry-display').textContent = tier.entry + (tier.entry>1?' tokens':' token');
+
+  if (mp.ready) {
+    runtime.online = { searching: true };
+    // If nobody else is online within 10s, stop waiting and play a bot instead —
+    // otherwise a solo tester (or an empty player pool) would search forever.
+    runtime.online.timeoutId = setTimeout(() => {
+      if (runtime.online && runtime.online.searching) {
+        mpCancelSearch();
+        runtime.online = null;
+        toast('No players online right now — matching you with a bot');
+        startFindMatchLocal(tier);
+      }
+    }, 10000);
+    mpFindMatch((info) => {
+      if (!runtime.online || !runtime.online.searching) return; // cancelled/timed out meanwhile
+      clearTimeout(runtime.online.timeoutId);
+      if (!info) {
+        toast('Matchmaking failed — refunding, playing vs bot instead');
+        state.balance += tier.entry; updateBalance();
+        runtime.online = null;
+        startFindMatchLocal(tier);
+        return;
+      }
+      runtime.online = { matchId: info.matchId, role: info.role, round: 1 };
+      startGame('pvp', tier.entry, tier.prize, info.opponent.username || 'Player', info.opponent.avatar || '🤖', info.bo || 5, info.opponent.elo || 1000);
+    }, () => {
+      if (runtime.online) clearTimeout(runtime.online.timeoutId);
+      runtime.online = null;
+      startFindMatchLocal(tier);
+    });
+  } else {
+    runtime.online = null;
+    startFindMatchLocal(tier);
+  }
+}
+
+function startFindMatchLocal(tier) {
   runtime.searchTimer = setTimeout(() => {
     // For PvP, randomize opponent ELO near the player's rating to feel like real matchmaking
     const oppElo = randomOppEloNear(state.elo);
@@ -508,7 +567,21 @@ function startFindMatch() {
 }
 
 function cancelSearch() {
-  clearTimeout(runtime.searchTimer);
+  if (runtime.awaitingInvite) {
+    mpCancelInvite();
+    document.getElementById('pvp-searching').style.display = 'none';
+    runtime.awaitingInvite = null;
+    showView('friends'); renderFriends();
+    toast('Invite cancelled');
+    return;
+  }
+  if (runtime.online && runtime.online.searching) {
+    if (runtime.online.timeoutId) clearTimeout(runtime.online.timeoutId);
+    mpCancelSearch();
+  } else {
+    clearTimeout(runtime.searchTimer);
+  }
+  runtime.online = null;
   state.balance += PVP_TIER.entry; updateBalance();
   document.getElementById('pvp-searching').style.display = 'none';
   document.getElementById('lobby-pvp').style.display = 'flex';
@@ -528,8 +601,8 @@ function startGame(mode, entry, prize, oppN, oppAvatar='🤖', bo=3, oppElo=1000
   document.getElementById('score-you').textContent = 0;
   document.getElementById('score-opp').textContent = 0;
   document.getElementById('stake-label').textContent = entry > 0
-    ? entry + ' token entry'
-    : (mode === 'streak' ? 'Streak Run' : 'Free play');
+    ? entry + ' token entry' + (runtime.online ? ' · Online' : '')
+    : (mode === 'streak' ? 'Streak Run' : (runtime.online ? 'Free play · Online' : 'Free play'));
   const winThreshold = Math.ceil(bo / 2);
   document.getElementById('round-label').textContent = 'First to ' + winThreshold + ' wins';
   document.getElementById('round-info').textContent = 'Round 1 — first to ' + winThreshold + ' wins';
@@ -569,7 +642,14 @@ function startGame(mode, entry, prize, oppN, oppAvatar='🤖', bo=3, oppElo=1000
   showView('game');
 }
 
+// Dispatcher — routes to the real online round sync when in a live match,
+// otherwise plays out instantly against the local bot logic (unchanged).
 function play(choice) {
+  if (runtime.online && runtime.online.matchId) { playOnline(choice); return; }
+  playLocal(choice);
+}
+
+function playLocal(choice) {
   const g = runtime.gameState; if (!g || g.done) return;
   ['btn-rock','btn-paper','btn-scissors'].forEach(id => document.getElementById(id).disabled = true);
   const emojis = SIGNS;
@@ -667,6 +747,77 @@ function renderPickHistory(g) {
   wrap.innerHTML = buildPickHistoryHtml(g.youPicks, g.oppPicks, g.outcomes, g.opp);
 }
 
+// Real online round: submit our pick via commit-reveal, wait for the opponent's,
+// then resolve identically to the local flow once both are revealed.
+function playOnline(choice) {
+  const g = runtime.gameState; if (!g || g.done) return;
+  ['btn-rock','btn-paper','btn-scissors'].forEach(id => document.getElementById(id).disabled = true);
+  if (!g.youPicks) g.youPicks = [];
+  if (!g.oppPicks) g.oppPicks = [];
+  if (runtime.currentMode !== 'friend') {
+    if (choice === 'rock')     state.pickRock = (state.pickRock || 0) + 1;
+    if (choice === 'paper')    state.pickPaper = (state.pickPaper || 0) + 1;
+    if (choice === 'scissors') state.pickScissors = (state.pickScissors || 0) + 1;
+  }
+
+  const youEl = document.getElementById('choice-you');
+  youEl.textContent = SIGNS[choice];
+  youEl.classList.add('reveal');
+  if (navigator.vibrate) navigator.vibrate(8);
+  const rr = document.getElementById('round-result');
+  rr.textContent = 'Waiting for opponent…';
+  rr.className = 'choice-result';
+
+  const round = runtime.online.round;
+  mpSubmitPick(round, choice, (r, myPick, oppPick) => {
+    if (!runtime.online || runtime.online.round !== round) return; // stale callback
+    resolveOnlineRound(g, myPick, oppPick);
+  });
+}
+
+function resolveOnlineRound(g, myPick, oppPick) {
+  g.youPicks.push(myPick);
+  g.oppPicks.push(oppPick);
+  const oppEl = document.getElementById('choice-opp');
+  oppEl.textContent = SIGNS[oppPick];
+  oppEl.classList.add('reveal');
+  const rr = document.getElementById('round-result');
+  let outcome;
+  if (myPick === oppPick) {
+    rr.textContent = 'DRAW'; rr.className = 'choice-result draw'; outcome = 'D';
+    if (runtime.currentMode !== 'friend') state.drawRounds = (state.drawRounds || 0) + 1;
+    g.matchDraws = (g.matchDraws || 0) + 1;
+  } else if (beats(myPick, oppPick)) {
+    g.scoreYou++; rr.textContent = 'WIN'; rr.className = 'choice-result win'; outcome = 'W';
+    if (navigator.vibrate) navigator.vibrate([20, 30, 20]);
+  } else {
+    g.scoreOpp++; rr.textContent = 'LOSE'; rr.className = 'choice-result lose'; outcome = 'L';
+    if (navigator.vibrate) navigator.vibrate(40);
+  }
+  if (!g.outcomes) g.outcomes = [];
+  g.outcomes.push(outcome);
+  document.getElementById('score-you').textContent = g.scoreYou;
+  document.getElementById('score-opp').textContent = g.scoreOpp;
+  renderPickHistory(g);
+  const winThreshold = Math.ceil(g.bo / 2);
+  const over = g.scoreYou >= winThreshold || g.scoreOpp >= winThreshold;
+  if (over) {
+    setTimeout(() => endGame(g), 700);
+  } else {
+    runtime.online.round++;
+    g.round++;
+    document.getElementById('round-info').textContent = 'Round ' + g.round + ' — first to ' + winThreshold + ' wins';
+    setTimeout(() => {
+      document.getElementById('choice-you').textContent = '?';
+      document.getElementById('choice-you').classList.remove('reveal');
+      document.getElementById('choice-opp').textContent = '?';
+      document.getElementById('choice-opp').classList.remove('reveal');
+      document.getElementById('round-result').textContent = '';
+      ['btn-rock','btn-paper','btn-scissors'].forEach(id => document.getElementById(id).disabled = false);
+    }, 850);
+  }
+}
+
 function calculateEloChange(playerElo, oppElo, won, draw) {
   const K = 32;
   const expected = 1 / (1 + Math.pow(10, (oppElo - playerElo) / 400));
@@ -708,6 +859,10 @@ function endGame(g) {
     else if (draw)  { type = 'draw'; title = 'DRAW';     detail = 'Friendly match — no rewards.'; }
     else            { type = 'lose'; title = 'DEFEATED'; detail = 'Friendly match — no rewards.'; }
     if (won && navigator.vibrate) navigator.vibrate([20, 40, 20]);
+    if (runtime.online) {
+      mpLeaveMatch(false);
+      runtime.online = null;
+    }
     showResultPopup(type, { title, detail });
     return;
   }
@@ -812,12 +967,20 @@ function endGame(g) {
       opp: g.opp, oppAvatar: g.oppAvatar,
       result: won ? 'W' : draw ? 'D' : 'L',
       score: g.scoreYou + '-' + g.scoreOpp,
-      eloDelta, mode: 'PvP',
+      eloDelta, mode: runtime.online ? 'PvP Online' : 'PvP',
       youElo: state.elo, oppElo: g.oppElo,
       youPicks: g.youPicks || [], oppPicks: g.oppPicks || [], outcomes: g.outcomes || [],
       time: new Date().toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
     });
     if (state.history.length > 100) state.history = state.history.slice(0, 100);
+
+    // Clean up the real-time match: push our updated ELO/avatar to presence and
+    // tear down listeners now that the match is fully resolved.
+    if (runtime.online) {
+      mpLeaveMatch(false);
+      if (mp.ready) mpPushProfile();
+      runtime.online = null;
+    }
 
     updateBalance();
     saveState();
@@ -1005,12 +1168,19 @@ function leaveGame() {
       opp: g.opp, oppAvatar: g.oppAvatar,
       result: 'L',
       score: 'Forfeit',
-      eloDelta, mode: 'PvP',
+      eloDelta, mode: runtime.online ? 'PvP Online' : 'PvP',
       youElo: state.elo, oppElo: g.oppElo,
       youPicks: g.youPicks || [], oppPicks: g.oppPicks || [], outcomes: g.outcomes || [],
       time: new Date().toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
     });
     if (state.history.length > 100) state.history = state.history.slice(0, 100);
+
+    // Notify the opponent (if any) that we forfeited, and tear down listeners.
+    if (runtime.online) {
+      mpLeaveMatch(true);
+      if (mp.ready) mpPushProfile();
+      runtime.online = null;
+    }
 
     saveState();
     updateBalance();
@@ -1030,6 +1200,10 @@ function leaveGame() {
   if (isForfeit && runtime.currentMode === 'friend') {
     // Forfeit a friend match: no penalty, just exit cleanly.
     g.done = true;
+    if (runtime.online) {
+      mpLeaveMatch(true);
+      runtime.online = null;
+    }
     showView('lobby');
     return;
   }
@@ -1616,6 +1790,7 @@ function saveName() {
   document.getElementById('name-modal').classList.remove('open');
   updateHeader();
   renderProfile();
+  if (mp.ready) mpPushProfile();
   toast('Name saved');
 }
 
@@ -1996,6 +2171,7 @@ function equipEmoji(e) {
   state.avatar = e;
   saveState();
   updateHeader();
+  if (mp.ready) mpPushProfile();
   // Refresh whichever owned-emoji view is currently visible
   const shopActive = document.getElementById('view-shop').classList.contains('active');
   const profileActive = document.getElementById('view-profile').classList.contains('active');
@@ -2399,9 +2575,14 @@ function renderLeaderboard() {
 }
 
 /* ---- FRIENDS LIST ---- */
-// Deterministic online status per friend per day (so it doesn't flicker mid-session
-// but does rotate). Seeded by name+avatar+date.
+// Online status for a friend. Real online-linked friends (f.uid set) use live
+// Firebase presence data (kept fresh by mpWatchFriendPresence). Legacy local/demo
+// friends fall back to a deterministic per-day pseudo-random status.
 function isFriendOnline(f) {
+  if (f.uid) {
+    const p = mp.friendPresence[f.uid];
+    return !!(p && p.online);
+  }
   const seed = _hashStr((f.name || '') + '|' + (f.avatar || '') + '|' + todayKey());
   // ~50% online
   return (seed % 2) === 0;
@@ -2409,14 +2590,24 @@ function isFriendOnline(f) {
 
 function renderFriends() {
   const list = document.getElementById('friends-list');
+  const codeEl = document.getElementById('my-friend-code');
+  if (codeEl) codeEl.textContent = mp.ready ? mpMyCode() : (mp.configured ? 'Connecting…' : 'Offline — Firebase not configured');
+
+  // Keep live presence flowing for any online-linked friends so status badges update in real time.
+  const uids = (state.friends || []).map(f => f.uid).filter(Boolean);
+  mpWatchFriendPresence(uids, () => {
+    if (document.getElementById('view-friends').classList.contains('active')) renderFriends();
+  });
+
   if (!state.friends || state.friends.length === 0) {
-    list.innerHTML = '<div class="empty-state">No friends yet.<br>Add someone above, or tap a recent opponent in your match history.</div>';
+    list.innerHTML = '<div class="empty-state">No friends yet.<br>Add someone by friend code, or a local demo friend below.</div>';
     return;
   }
   list.innerHTML = state.friends.map((f, idx) => {
     const online = isFriendOnline(f);
     const statusClass = online ? 'online' : 'offline';
     const statusText = online ? 'Online' : 'Offline';
+    const linkTag = f.uid ? ' · Online player' : '';
     // Offline friends don't show a vs button — you can't request a match against them.
     const vsBtn = online
       ? `<button class="friend-vs-btn" title="Request match" onclick="event.stopPropagation();requestFriendMatch(${idx})">⚔ vs</button>`
@@ -2426,7 +2617,7 @@ function renderFriends() {
         <div class="friend-avatar">${f.avatar || '🤖'}</div>
         <div class="friend-info">
           <div class="friend-name">${f.name}</div>
-          <div class="friend-meta">Added ${f.addedAt || 'recently'}</div>
+          <div class="friend-meta">Added ${f.addedAt || 'recently'}${linkTag}</div>
         </div>
         <div class="friend-actions">
           ${vsBtn}
@@ -2438,6 +2629,39 @@ function renderFriends() {
       </div>
     `;
   }).join('');
+}
+// Add a REAL player as a friend using their friend code (their Firebase UID).
+function addFriendByCode() {
+  const input = document.getElementById('friend-code-input');
+  const code = (input.value || '').trim();
+  if (!code) { toast('Enter a friend code'); return; }
+  if (!mp.ready) { toast('Online features unavailable — Firebase not configured'); return; }
+  if (code === mp.uid) { toast("That's your own code!"); return; }
+  if ((state.friends || []).some(f => f.uid === code)) { toast('Already in your friends list'); return; }
+  mpLookupPlayer(code, (profile) => {
+    if (!profile) { toast('Code not found — make sure they opened the app at least once'); return; }
+    if (!state.friends) state.friends = [];
+    state.friends.unshift({
+      name: profile.username || 'Player',
+      avatar: profile.avatar || '🤖',
+      uid: code,
+      addedAt: new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+    });
+    input.value = '';
+    saveState();
+    renderFriends();
+    updateHeader();
+    toast('Added ' + (profile.username || 'Player'));
+  });
+}
+function copyFriendCode() {
+  const code = mpMyCode();
+  if (!code) { toast('Not connected yet — try again in a moment'); return; }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(code).then(() => toast('Code copied!')).catch(() => toast(code));
+  } else {
+    toast(code);
+  }
 }
 function addFriend() {
   const input = document.getElementById('friend-input');
@@ -2781,10 +3005,36 @@ function openFriendProfile(idx) {
 
 /* Friend match request — FREE, no entry/prize, does not affect ELO or stats.
    Pure social play. The match runs in 'friend' mode so endGame() skips all
-   wallet, ELO, and history side effects. */
+   wallet, ELO, and history side effects.
+   Two paths:
+   - Real online-linked friend (f.uid set): sends a live Firebase invite and waits
+     for them to accept/decline — a real round-synced match against them.
+   - Legacy local/demo friend (no uid): plays out the old simulated instant match. */
 function requestFriendMatch(idx) {
   const f = state.friends && state.friends[idx];
   if (!f) return;
+
+  if (f.uid && mp.ready) {
+    runtime.awaitingInvite = f;
+    hideLobbySections();
+    document.getElementById('pvp-searching').style.display = 'block';
+    document.getElementById('search-entry-display').textContent = 'Waiting for ' + f.name + '…';
+    showView('lobby');
+    mpSendInvite(f.uid, (result, info) => {
+      document.getElementById('pvp-searching').style.display = 'none';
+      runtime.awaitingInvite = null;
+      if (result === 'accepted' && info) {
+        runtime.online = { matchId: info.matchId, role: info.role, round: 1 };
+        startGame('friend', 0, 0, info.opponent.username || f.name, info.opponent.avatar || f.avatar || '🤖', PVP_TIER.bo, info.opponent.elo || 1000);
+      } else {
+        showView('friends'); renderFriends();
+        toast(result === 'declined' ? f.name + ' declined the invite' : 'No response from ' + f.name);
+      }
+    });
+    return;
+  }
+
+  // Legacy local/demo friend — simulated instant match (unchanged behavior)
   const synth = getPlayerSyntheticProfile(f.name, f.avatar);
   toast('Match request sent — ' + f.name + ' accepted!');
   if (navigator.vibrate) navigator.vibrate(15);
@@ -2793,6 +3043,36 @@ function requestFriendMatch(idx) {
     // mode='friend', entry=0, prize=0, BO from PVP_TIER for familiar pacing
     startGame('friend', 0, 0, f.name, f.avatar || '🤖', PVP_TIER.bo, synth.elo);
   }, 600);
+}
+
+/* ---- INCOMING INVITE MODAL (real friend challenges) ---- */
+let _incomingInvite = null;
+function showIncomingInvite(inv) {
+  _incomingInvite = inv;
+  document.getElementById('invite-body').innerHTML = `
+    <div style="font-size:48px;margin:6px 0">${inv.fromAvatar || '🤖'}</div>
+    <strong>${inv.fromName}</strong> wants to play a friendly match!<br>
+    <span style="font-size:12px;color:var(--muted)">Free — no tokens, no ELO impact</span>
+  `;
+  document.getElementById('invite-modal').classList.add('open');
+  if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
+}
+function acceptIncomingInvite() {
+  if (!_incomingInvite) return;
+  const inv = _incomingInvite;
+  document.getElementById('invite-modal').classList.remove('open');
+  _incomingInvite = null;
+  mpAcceptInvite(inv, (info) => {
+    if (!info) { toast('Failed to join match'); return; }
+    runtime.online = { matchId: info.matchId, role: info.role, round: 1 };
+    startGame('friend', 0, 0, info.opponent.username || inv.fromName, info.opponent.avatar || inv.fromAvatar || '🤖', PVP_TIER.bo, info.opponent.elo || 1000);
+  });
+}
+function declineIncomingInvite() {
+  if (!_incomingInvite) return;
+  mpDeclineInvite(_incomingInvite);
+  _incomingInvite = null;
+  document.getElementById('invite-modal').classList.remove('open');
 }
 
 function isStandalone() {
@@ -2812,6 +3092,29 @@ updateBalance();
 updateHeader();
 initTourneys();
 refreshFeatured();
+
+// Wire the multiplayer module's callbacks into the UI, then connect.
+mp.onStatusChange = updateOnlineStatusUI;
+mp.onIncomingInvite = showIncomingInvite;
+mp.onOpponentForfeit = () => {
+  const g = runtime.gameState;
+  if (!g || g.done || !runtime.online) return;
+  if (runtime.currentMode === 'pvp') {
+    g.scoreYou = Math.ceil(g.bo / 2);
+    toast('Opponent forfeited — you win!');
+    endGame(g);
+  } else {
+    g.done = true;
+    toast('Opponent left the match');
+    mpLeaveMatch(false);
+    runtime.online = null;
+    showView('lobby');
+  }
+};
+updateOnlineStatusUI('offline');
+mpInit((ok) => {
+  if (ok) mpPushProfile();
+});
 
 if (isIOS() && !isStandalone()) {
   try {

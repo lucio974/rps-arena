@@ -1,8 +1,10 @@
-const CACHE = 'rps-arena-v5';
+const CACHE = 'rps-arena-v6';
 const ASSETS = [
   './',
   './index.html',
   './app.js',
+  './multiplayer.js',
+  './firebase-config.js',
   './emoji-catalog.js',
   './manifest.json',
   './icon-192.png',
@@ -24,6 +26,8 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+  // Never cache Firebase/Google API calls — those need to always hit the network
+  // (auth, realtime database websockets, etc.) and must never be intercepted.
   if (!e.request.url.startsWith(self.location.origin)) return;
   e.respondWith(
     caches.match(e.request).then(cached => {
