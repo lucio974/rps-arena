@@ -5,11 +5,11 @@
    Leaving apiKey as "YOUR_API_KEY" keeps the app in offline/local-only mode —
    PvP will fall back to the old bot-simulation instead of real matchmaking. */
 const FIREBASE_CONFIG = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+    apiKey: "AIzaSyBb_eSz4a0EkXd94Az5ggX9ymXUvH5hKjU",
+  authDomain: "rps-arena-5bf33.firebaseapp.com",
+  databaseURL: "https://rps-arena-5bf33-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "rps-arena-5bf33",
+  storageBucket: "rps-arena-5bf33.firebasestorage.app",
+  messagingSenderId: "542366547222",
+  appId: "1:542366547222:web:bcf51c205b02dd50a8a437"
 };
