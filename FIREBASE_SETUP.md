@@ -61,11 +61,13 @@ const FIREBASE_CONFIG = {
 
 ## Étape 6 — Publier les règles de sécurité
 
+⚠️ **Si tu avais déjà configuré Firebase avant cette mise à jour, tu DOIS republier les règles** — le fichier `database.rules.json` a changé (les invitations d'amis et les offres d'échange ne fonctionnaient pas correctement avec les anciennes règles, un ami ne pouvait pas rejoindre le match après avoir accepté). Modifier le fichier local ne suffit pas : il faut recoller son contenu dans la Console Firebase et cliquer Publish, sinon la base de données en ligne continue d'utiliser les anciennes règles.
+
 1. Toujours dans **Realtime Database**, va dans l'onglet **Rules**
 2. Remplace tout le contenu par celui du fichier `database.rules.json` livré avec le projet
 3. Clique **Publish**
 
-Ces règles autorisent uniquement les utilisateurs connectés (même anonymement) à lire/écrire les données de matchmaking, de présence et d'invitations — un visiteur non connecté ne peut rien voir.
+Ces règles autorisent uniquement les utilisateurs connectés (même anonymement) à lire/écrire les données de matchmaking, de présence, de collections, d'invitations et d'échanges — un visiteur non connecté ne peut rien voir.
 
 *Note : pour un jeu occasionnel comme celui-ci avec authentification anonyme, ces règles offrent une protection raisonnable mais pas un système anti-triche à toute épreuve (un joueur techniquement motivé pourrait théoriquement modifier ses propres écritures avant qu'elles soient validées par l'autre client). Si tu veux blinder ça plus tard, il faudrait passer par des Cloud Functions — hors scope de cette V1.*
 

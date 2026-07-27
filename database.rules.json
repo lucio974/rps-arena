@@ -10,6 +10,13 @@
       }
     },
 
+    "collections": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+
     "queue": {
       ".read": "auth != null",
       "$uid": {
@@ -25,9 +32,18 @@
     },
 
     "invites": {
+      ".read": "auth != null",
       "$uid": {
-        ".read": "auth != null && auth.uid === $uid",
         "$inviteId": {
+          ".write": "auth != null"
+        }
+      }
+    },
+
+    "trades": {
+      ".read": "auth != null",
+      "$uid": {
+        "$tradeId": {
           ".write": "auth != null"
         }
       }

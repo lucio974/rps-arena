@@ -34,7 +34,11 @@ const ELO_TIERS = [
 const DEFAULT_STATE = {
   username: 'Player',
   avatar: '😀',
-  ownedEmojis: ['😀'],
+  // ownedEmojis is now an array of INSTANCES (not plain emoji strings), so duplicates
+  // with independent float values and trade provenance are possible:
+  // { id, e (emoji), float (0-1, cosmetic quality roll), source, fromCode (uid traded from), ts }
+  ownedEmojis: [{ id: 'starter-0', e: '😀', float: 0.5, source: 'starter', fromCode: null, ts: 0 }],
+  avatarInstanceId: 'starter-0',
   balance: 10,    // tokens
   elo: 1000,
   bestElo: 1000,        // highest ELO ever reached
@@ -55,7 +59,7 @@ const DEFAULT_STATE = {
   tournaments: null,
   hasReset: false,
   lastRewardedStreak: 0,
-  claimedChallenges: [], // ids of completed challenge claims (challenge emojis)
+  claimedChallenges: [], // ids of challenges that have been auto-granted (emoji instance handed out)
   // Hidden challenge tracking
   shopClicks: 0,                  // increments each time the Shop tab is opened
   shopClicksUnlocked: false,      // 100-clicks challenge revealed (set 3s after threshold)
@@ -63,14 +67,14 @@ const DEFAULT_STATE = {
   brokenFeatureTriggered: false,  // 0.001% PvP-win RNG (lifetime once, survives reset)
   oddsTriggered: false,           // 0.1% PvP-win RNG (lifetime once, survives reset)
   // User-customizable theme color (drives --gold and --gold-light at runtime)
-  themeColor: null,               // null = default gold (#c9a84c)
+  themeColor: null,               // null = default Amber (#FFB562)
   // Daily free tokens
   lastDailyClaim: null,
-  // Daily featured
+  // Daily box preview (was "daily featured") — rotates hourly, purely a teaser now
   featuredDate: null,
-  featuredBucket: null,  // 6-hour rotation key
+  featuredBucket: null,  // hourly rotation key
   featuredEmojis: [],
-  // Friends list (cosmetic only)
+  // Friends list — local demo friends (no uid) and real online-linked friends (uid set)
   friends: [],
   // Streak run state (persistent for a current run)
   currentStreakBot: null,
@@ -91,17 +95,18 @@ let runtime = {
 };
 
 /* ---- THEME ----
-   The brand accent color (--gold) is user-customizable. Presets cover the
-   common ELO tier vibes plus a few extras; "Custom" lets the user enter any hex. */
+   The brand accent color (--gold) is user-customizable. Presets lean muted/soft
+   rather than neon-bright so they sit comfortably as a UI accent; "Custom" lets
+   the user enter any hex. */
 const THEME_PRESETS = [
-  { id: 'gold',     name: 'Gold',      base: '#c9a84c', light: '#f0d080' }, // default
-  { id: 'diamond',  name: 'Diamond',   base: '#9ddffa', light: '#c5ecfd' },
-  { id: 'ruby',     name: 'Ruby',      base: '#e24b6a', light: '#f5839a' },
-  { id: 'emerald',  name: 'Emerald',   base: '#3bcf85', light: '#82e8b4' },
-  { id: 'amethyst', name: 'Amethyst',  base: '#a96bff', light: '#cda3ff' },
-  { id: 'sunset',   name: 'Sunset',    base: '#ff9b3d', light: '#ffc079' },
-  { id: 'rose',     name: 'Rose',      base: '#ffadd6', light: '#ffd0e6' },
-  { id: 'mint',     name: 'Mint',      base: '#7fbab0', light: '#a9d8d0' },
+  { id: 'amber',    name: 'Amber',     base: '#FFB562', light: '#FFCB91' }, // default
+  { id: 'slate',    name: 'Slate',     base: '#4D7D7D', light: '#82A4A4' },
+  { id: 'steel',    name: 'Steel',     base: '#487D8F', light: '#7FA4B1' },
+  { id: 'sage',     name: 'Sage',      base: '#ABC2AF', light: '#C4D4C7' },
+  { id: 'violet',   name: 'Violet',    base: '#6A6699', light: '#9794B8' },
+  { id: 'mauve',    name: 'Mauve',     base: '#BD6699', light: '#D194B8' },
+  { id: 'teal',     name: 'Teal',      base: '#65C2AF', light: '#93D4C7' },
+  { id: 'lavender', name: 'Lavender',  base: '#CAB6FE', light: '#DACCFE' },
 ];
 
 // Compute a lighter companion color from a hex by lerping toward white by 30%.
@@ -120,7 +125,7 @@ function _lightenHex(hex, amount) {
 // Convert a #rrggbb hex to an "R,G,B" comma-separated string for use inside rgba().
 function _hexToRgbTriplet(hex) {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex);
-  if (!m) return '201,168,76';
+  if (!m) return '255,181,98';
   const n = parseInt(m[1], 16);
   return ((n >> 16) & 0xff) + ',' + ((n >> 8) & 0xff) + ',' + (n & 0xff);
 }
@@ -161,7 +166,7 @@ function applyTheme() {
   r.setProperty('--win', base);
 }
 function setTheme(themeId) {
-  state.themeColor = themeId === 'gold' ? null : themeId;
+  state.themeColor = themeId === 'amber' ? null : themeId;
   saveState();
   applyTheme();
   renderProfile();
@@ -178,7 +183,7 @@ function setThemeCustom(hex) {
 function renderThemePicker() {
   const grid = document.getElementById('theme-picker');
   if (!grid) return;
-  const current = state.themeColor || 'gold';
+  const current = state.themeColor || 'amber';
   grid.innerHTML = THEME_PRESETS.map(p => {
     const sel = p.id === current ? 'selected' : '';
     return `
@@ -193,7 +198,7 @@ function renderThemePicker() {
     const preset = THEME_PRESETS.find(p => p.id === current);
     if (preset) input.value = preset.base;
     else if (/^#[0-9a-f]{6}$/i.test(current)) input.value = current;
-    else input.value = '#c9a84c';
+    else input.value = '#FFB562';
   }
 }
 // Wired from the "Apply Custom" button — reads the color input value
@@ -207,6 +212,7 @@ function applyCustomTheme() {
 // Shows ALL hidden challenges. For locked ones: emoji + name + "???" placeholders.
 // For unlocked: full description + progress text. For claimed: success badge.
 function renderSecretChallenges() {
+  checkAndGrantChallenges();
   const wrap = document.getElementById('secret-challenges');
   if (!wrap) return;
   const hidden = CHALLENGE_DEFS.filter(c => c.hidden);
@@ -217,11 +223,16 @@ function renderSecretChallenges() {
   wrap.innerHTML = hidden.map(c => {
     const unlocked = !!(c.unlockFlag && c.unlockFlag());
     const claimed = (state.claimedChallenges || []).includes(c.id);
-    const owned = state.ownedEmojis.includes(c.emoji);
+    const owned = ownsEmoji(c.emoji);
     let cardCls = 'secret-card locked';
     let statusCls = 'locked';
     let statusLabel = 'LOCKED';
-    if (claimed || owned) {
+    if (claimed && !owned) {
+      // Earned it, but the copy has since been traded away.
+      cardCls = 'secret-card traded';
+      statusCls = 'traded';
+      statusLabel = '???';
+    } else if (claimed || owned) {
       cardCls = 'secret-card claimed';
       statusCls = 'claimed';
       statusLabel = 'OWNED';
@@ -252,10 +263,7 @@ function loadState() {
     const raw = localStorage.getItem('rps-arena-state-v3');
     if (raw) {
       const merged = { ...DEFAULT_STATE, ...JSON.parse(raw) };
-      // Defensive: dedupe ownedEmojis in case earlier code paths added duplicates
-      if (Array.isArray(merged.ownedEmojis)) {
-        merged.ownedEmojis = Array.from(new Set(merged.ownedEmojis));
-      }
+      _migrateOwnedEmojisToInstances(merged);
       return merged;
     }
     // migrate v2
@@ -263,7 +271,7 @@ function loadState() {
     if (v2) {
       const old = JSON.parse(v2);
       const newBalance = Math.max(10, Math.floor((old.balance || 1000) / 100));
-      return {
+      const merged = {
         ...DEFAULT_STATE,
         username: old.username || 'Player',
         avatar: old.avatar || '😀',
@@ -277,12 +285,74 @@ function loadState() {
         tourneysWon: old.tourneysWon || 0,
         history: [],
       };
+      _migrateOwnedEmojisToInstances(merged);
+      return merged;
     }
   } catch(e) {}
   return { ...DEFAULT_STATE };
 }
 function saveState() {
   try { localStorage.setItem('rps-arena-state-v3', JSON.stringify(state)); } catch(e) {}
+}
+
+/* ---- EMOJI INSTANCE MODEL ----
+   Each owned emoji is its own instance (not just a boolean "do I own this emoji"),
+   so duplicates are possible with independent float values and trade provenance.
+   { id, e (emoji char), float (0-1 cosmetic quality roll), source, fromCode (uid
+   this copy was traded from, or null), ts (acquired timestamp) } */
+function _genId() { return 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+function rollFloat() { return Math.random(); }
+function floatLabel(f) {
+  if (f === null || f === undefined) return '';
+  if (f < 0.07) return 'Pristine';
+  if (f < 0.20) return 'Excellent';
+  if (f < 0.45) return 'Fair';
+  if (f < 0.75) return 'Worn';
+  return 'Battered';
+}
+// Migrate an old flat array of emoji strings (pre-instance model) into instance objects.
+// Safe to call on already-migrated state (no-ops).
+function _migrateOwnedEmojisToInstances(s) {
+  if (!Array.isArray(s.ownedEmojis)) { s.ownedEmojis = [{ id: 'starter-0', e: '😀', float: 0.5, source: 'starter', fromCode: null, ts: 0 }]; }
+  else if (s.ownedEmojis.length && typeof s.ownedEmojis[0] === 'string') {
+    const uniq = Array.from(new Set(s.ownedEmojis));
+    s.ownedEmojis = uniq.map(e => ({ id: _genId(), e, float: 0.5, source: 'legacy', fromCode: null, ts: 0 }));
+  }
+  if (!s.avatarInstanceId) {
+    const match = s.ownedEmojis.find(i => i.e === s.avatar);
+    s.avatarInstanceId = match ? match.id : (s.ownedEmojis[0] && s.ownedEmojis[0].id);
+  }
+}
+function addEmojiInstance(emoji, opts) {
+  opts = opts || {};
+  const inst = {
+    id: _genId(),
+    e: emoji,
+    float: opts.float !== undefined ? opts.float : rollFloat(),
+    source: opts.source || 'box',
+    fromCode: opts.fromCode || null,
+    ts: Date.now(),
+  };
+  state.ownedEmojis.push(inst);
+  return inst;
+}
+function ownsEmoji(emoji) { return state.ownedEmojis.some(i => i.e === emoji); }
+function getInstancesOf(emoji) { return state.ownedEmojis.filter(i => i.e === emoji); }
+function getInstanceById(id) { return state.ownedEmojis.find(i => i.id === id); }
+function removeInstanceById(id) {
+  const idx = state.ownedEmojis.findIndex(i => i.id === id);
+  if (idx === -1) return null;
+  return state.ownedEmojis.splice(idx, 1)[0];
+}
+function equippedInstance() {
+  return getInstanceById(state.avatarInstanceId) || state.ownedEmojis.find(i => i.e === state.avatar) || state.ownedEmojis[0];
+}
+function equipInstance(id) {
+  const inst = getInstanceById(id);
+  if (!inst) return false;
+  state.avatarInstanceId = id;
+  state.avatar = inst.e;
+  return true;
 }
 
 function rnd(arr){return arr[Math.floor(Math.random()*arr.length)]}
@@ -365,7 +435,7 @@ function showView(id) {
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   const target = document.getElementById('view-' + id);
   if (target) target.classList.add('active');
-  const idx = { lobby: 0, profile: 1, history: 2, shop: 3 }[id];
+  const idx = { lobby: 0, profile: 1, history: 2, shop: 3, trade: 4 }[id];
   if (idx !== undefined) document.querySelectorAll('.nav-btn')[idx].classList.add('active');
   document.querySelector('.view-wrap').scrollTop = 0;
   if (id === 'lobby') hideLobbySections();
@@ -918,10 +988,10 @@ function endGame(g) {
       // Uniform sample across full shop pool; skip silently if you own everything.
       if (Math.random() < 0.01) {
         const pool = getShopPool();
-        const unowned = pool.filter(p => !state.ownedEmojis.includes(p.e));
+        const unowned = pool.filter(p => !ownsEmoji(p.e));
         if (unowned.length > 0) {
           const pick = unowned[Math.floor(Math.random() * unowned.length)];
-          state.ownedEmojis.push(pick.e);
+          addEmojiInstance(pick.e, { source: 'bonus' });
           setTimeout(() => toast('🎁 Bonus drop: ' + pick.e + ' ' + pick.name + '!', { reward: true }), 1500);
           if (navigator.vibrate) navigator.vibrate([10, 30, 10, 30, 60]);
         }
@@ -930,7 +1000,7 @@ function endGame(g) {
       // ── 0.1% chance: "Alien Invaders" (lifetime once, survives reset) ──
       if (!state.oddsTriggered && Math.random() < 0.001) {
         state.oddsTriggered = true;
-        if (!state.ownedEmojis.includes('👾')) state.ownedEmojis.push('👾');
+        if (!ownsEmoji('👾')) addEmojiInstance('👾', { source: 'bonus' });
         setTimeout(() => toast('👾 Alien Invaders — hidden challenge unlocked!', { reward: true }), 1700);
         if (navigator.vibrate) navigator.vibrate([40, 60, 40, 60, 100]);
       }
@@ -939,7 +1009,7 @@ function endGame(g) {
       // Lifetime once, survives reset. Grants 🔖, secret reset re-enable.
       if (!state.brokenFeatureTriggered && Math.random() < 0.00001) {
         state.brokenFeatureTriggered = true;
-        if (!state.ownedEmojis.includes('🔖')) state.ownedEmojis.push('🔖');
+        if (!ownsEmoji('🔖')) addEmojiInstance('🔖', { source: 'bonus' });
         // Secret reset re-enable (no UI announcement)
         state.hasReset = false;
         setTimeout(() => toast('🔖 +aura unlocked. Check profile.', { reward: true }), 1900);
@@ -1066,7 +1136,7 @@ function handleStreakEnd(won, draw) {
 
     let rewardEmoji = null;
     if (newRecord && ss.current >= 5 && ss.current > state.lastRewardedStreak) {
-      const unowned = getShopPool().filter(em => !state.ownedEmojis.includes(em.e));
+      const unowned = getShopPool().filter(em => !ownsEmoji(em.e));
       if (unowned.length > 0) {
         let pool = unowned;
         if (ss.current >= 15) {
@@ -1080,7 +1150,7 @@ function handleStreakEnd(won, draw) {
           if (rareOrBetter.length && Math.random() < 0.6) pool = rareOrBetter;
         }
         const reward = pool[Math.floor(Math.random() * pool.length)];
-        state.ownedEmojis.push(reward.e);
+        addEmojiInstance(reward.e, { source: 'streak' });
         state.lastRewardedStreak = ss.current;
         rewardEmoji = reward;
       }
@@ -1638,10 +1708,10 @@ function onTourneyMatchContinue(won) {
   if (fin.done && fin.winner === 'You') {
     if (t.special === 'emoji') {
       // Award a random emoji the player doesn't already own
-      const unowned = getShopPool().filter(em => !state.ownedEmojis.includes(em.e));
+      const unowned = getShopPool().filter(em => !ownsEmoji(em.e));
       if (unowned.length > 0) {
         const reward = unowned[Math.floor(Math.random() * unowned.length)];
-        state.ownedEmojis.push(reward.e);
+        addEmojiInstance(reward.e, { source: 'tourney' });
         toast('🏆 Champion! Unlocked ' + reward.name + ' ' + reward.e, { reward: true });
       } else {
         // Edge case: player owns everything → give 25 tokens instead
@@ -1702,14 +1772,26 @@ function renderProfile() {
   document.getElementById('ps-wins').textContent = state.wins;
   const wr = state.games > 0 ? Math.round(state.wins / state.games * 100) + '%' : '—';
   document.getElementById('ps-winrate').textContent = wr;
-  document.getElementById('ps-earned').textContent = state.earned;
+
+  // "Selected Emoji" stat — replaces Tokens Earned. Shows the equipped instance's
+  // rarity + float value (its cosmetic quality roll), color-coded by rarity.
+  const eq = equippedInstance();
+  const eqInfo = eq ? getEmojiInfo(eq.e) : null;
+  const eqEl = document.getElementById('ps-earned');
+  if (eqEl) {
+    eqEl.textContent = eq ? eq.float.toFixed(3) : '—';
+    eqEl.style.color = eqInfo ? `var(--${eqInfo.rarity})` : '';
+  }
+  const eqSub = document.getElementById('ps-earned-sub');
+  if (eqSub) eqSub.textContent = eqInfo ? eqInfo.rarity.toUpperCase() + ' · ' + floatLabel(eq.float) : '';
+
   document.getElementById('ps-streak').textContent = state.bestStreak;
   document.getElementById('ps-trophies').textContent = state.tourneysWon || 0;
   document.getElementById('ps-games').textContent = state.games;
 
-  // Owned emojis collection — resolve each owned emoji string to a display record
-  // (challenge emojis become legendary via getEmojiInfo). Group by rarity desc.
-  const ownedItems = state.ownedEmojis.map(e => getEmojiInfo(e));
+  // Owned emojis collection — one card PER INSTANCE (duplicates show separately,
+  // each with its own float value). Group by rarity desc.
+  const ownedItems = state.ownedEmojis.map(inst => Object.assign({}, getEmojiInfo(inst.e), { instance: inst }));
   document.getElementById('ps-collection-count').textContent = ownedItems.length;
   document.getElementById('ps-collection').innerHTML = renderOwnedCollectionHtml(ownedItems, { interactive: true });
 
@@ -1816,6 +1898,7 @@ function executeReset() {
   // Preserve owned emojis and current avatar across reset
   const keptEmojis = [...state.ownedEmojis];
   const keptAvatar = state.avatar;
+  const keptAvatarInstanceId = state.avatarInstanceId;
   // Lifetime flags: lifetime-once challenges can never re-fire after a reset.
   // (Otherwise users could farm resets to retry these RNG drops.)
   const keptBroken = !!state.brokenFeatureTriggered;
@@ -1824,6 +1907,7 @@ function executeReset() {
   fresh.hasReset = true;
   fresh.ownedEmojis = keptEmojis;
   fresh.avatar = keptAvatar;
+  fresh.avatarInstanceId = keptAvatarInstanceId;
   fresh.brokenFeatureTriggered = keptBroken;
   fresh.oddsTriggered = keptOdds;
   state = fresh;
@@ -1840,28 +1924,33 @@ function executeReset() {
 }
 
 /* ---- SHOP ---- */
-function setShopTab(el, cat) {
-  document.querySelectorAll('.shop-tab').forEach(t => t.classList.remove('active'));
-  el.classList.add('active');
-  runtime.shopCat = cat;
-  renderShopBrowse();
-}
-
+/* ---- SHOP (loot boxes) ---- */
 function renderShop() {
   refreshFeatured();
   renderDailyClaim();
   renderFeatured();
   renderChallenges();
-  renderShopBrowse();
+  renderLootBoxes();
 }
 
+// "Daily Box Preview" (was "Daily Featured") — a rotating, non-purchasable teaser of
+// what today's pool could hand you. Reuses the existing hourly rotation infra.
 function renderFeatured() {
   const el = document.getElementById('shop-featured-grid');
   el.innerHTML = state.featuredEmojis.map(e => {
     const item = getEmojiInfo(e);
     if (!item) return '';
-    return shopItemHtml(item, true);   // featured = half price
+    return previewItemHtml(item);
   }).join('');
+}
+function previewItemHtml(item) {
+  return `
+    <div class="shop-item" style="cursor:default">
+      <div class="shop-emoji">${item.e}</div>
+      <div class="shop-name">${item.name}</div>
+      <div class="shop-action ${item.rarity}">${item.rarity.toUpperCase()}</div>
+    </div>
+  `;
 }
 
 /* ---- CHALLENGE DEFINITIONS ----
@@ -2015,7 +2104,7 @@ const CHALLENGE_DEFS = [
     progress: () => {
       // Count owned emojis excluding the starter 😀. So a fresh user with just the starter
       // is at 0/10; collecting 10 more (any source: shop, challenge, reward) completes it.
-      const collected = state.ownedEmojis.filter(e => e !== '😀').length;
+      const collected = state.ownedEmojis.filter(i => i.e !== '😀').length;
       return [{ current: Math.min(collected, 10), goal: 10, label: 'emojis collected' }];
     },
   },
@@ -2060,7 +2149,47 @@ function isChallengeComplete(c) {
   return c.progress().every(p => p.current >= p.goal);
 }
 
+// Auto-grant any newly-completed challenges (emoji instance + bonus tokens, or straight
+// token reward). Called on every challenges/secret-challenges render and after matches,
+// so completion is picked up the moment it happens — no "Claim" button needed anymore.
+function checkAndGrantChallenges() {
+  if (!state.claimedChallenges) state.claimedChallenges = [];
+  let grantedAny = false;
+  for (const c of CHALLENGE_DEFS) {
+    if (state.claimedChallenges.includes(c.id)) continue;
+    if (!isChallengeComplete(c)) continue;
+    state.claimedChallenges.push(c.id);
+    grantedAny = true;
+    if (c.rewardType === 'tokens') {
+      state.balance += c.rewardAmount;
+      state.earned += c.rewardAmount;
+      const amt = c.rewardAmount, name = c.name;
+      setTimeout(() => toast('+' + amt + ' tokens — ' + name + ' complete!', { reward: true }), 300);
+    } else {
+      const inst = addEmojiInstance(c.emoji, { source: 'challenge' });
+      equipInstance(inst.id);
+      let bonusMsg = '';
+      if (c.bonusTokens && c.bonusTokens > 0) {
+        state.balance += c.bonusTokens;
+        state.earned += c.bonusTokens;
+        bonusMsg = ' (+' + c.bonusTokens + ' ▣)';
+      }
+      const emoji = c.emoji, name = c.name;
+      setTimeout(() => toast(emoji + ' ' + name + ' unlocked & equipped!' + bonusMsg, { reward: true }), 300);
+      if (navigator.vibrate) navigator.vibrate([30, 50, 30, 50, 60]);
+    }
+  }
+  if (grantedAny) {
+    saveState();
+    updateBalance();
+    updateHeader();
+    if (mp.ready) mpPushProfile();
+  }
+  return grantedAny;
+}
+
 function renderChallenges() {
+  checkAndGrantChallenges();
   const list = document.getElementById('challenges-list');
   // Hidden challenges only render once their unlockFlag returns true.
   const visible = CHALLENGE_DEFS.filter(c => !c.hidden || (c.unlockFlag && c.unlockFlag()));
@@ -2069,27 +2198,22 @@ function renderChallenges() {
     const claimed = (state.claimedChallenges || []).includes(c.id);
     const complete = isChallengeComplete(c);
 
-    // For emoji rewards, owned/equipped state drives the action. For token rewards,
-    // the only states are: locked (incomplete), claim available, or claimed.
+    // Emoji rewards are auto-granted the moment they complete (see checkAndGrantChallenges).
+    // The only actions left here are EQUIP/EQUIPPED, or ??? if the earned copy was traded away.
     let action;
     if (isTokenReward) {
-      if (claimed) {
-        action = `<div class="shop-action equipped" style="margin-top:6px">CLAIMED · +${c.rewardAmount} ▣</div>`;
-      } else if (complete) {
-        action = `<button onclick="claimChallenge('${c.id}')" style="margin-top:6px;background:var(--success);color:#fff;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.05em">CLAIM ▣ ${c.rewardAmount}</button>`;
-      } else {
-        action = '<div class="shop-action locked" style="margin-top:6px">LOCKED</div>';
-      }
+      action = claimed
+        ? `<div class="shop-action equipped" style="margin-top:6px">CLAIMED · +${c.rewardAmount} ▣</div>`
+        : '<div class="shop-action locked" style="margin-top:6px">LOCKED</div>';
     } else {
-      const owned = state.ownedEmojis.includes(c.emoji);
+      const owned = ownsEmoji(c.emoji);
       const equipped = state.avatar === c.emoji;
-      if (equipped) {
+      if (claimed && !owned) {
+        action = '<div class="shop-action locked" style="margin-top:6px">???</div>';
+      } else if (equipped) {
         action = '<div class="shop-action equipped" style="margin-top:6px">EQUIPPED</div>';
       } else if (owned) {
-        action = `<button onclick="equipEmoji('${c.emoji}')" style="margin-top:6px;background:var(--gold);color:#000;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.05em">EQUIP</button>`;
-      } else if (complete && !claimed) {
-        const bonusLabel = c.bonusTokens ? ' + ▣ ' + c.bonusTokens : '';
-        action = `<button onclick="claimChallenge('${c.id}')" style="margin-top:6px;background:var(--success);color:#fff;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.05em">CLAIM ${c.emoji}${bonusLabel}</button>`;
+        action = `<button onclick="equipEmojiChar('${c.emoji}')" style="margin-top:6px;background:var(--gold);color:#000;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.05em">EQUIP</button>`;
       } else {
         action = '<div class="shop-action locked" style="margin-top:6px">LOCKED</div>';
       }
@@ -2123,52 +2247,26 @@ function renderChallenges() {
   }).join('');
 }
 
-function claimChallenge(id) {
-  const c = CHALLENGE_DEFS.find(x => x.id === id);
-  if (!c) return;
-  if (!isChallengeComplete(c)) { toast('Challenge not complete'); return; }
-  const claimed = (state.claimedChallenges || []).includes(id);
-  if (claimed) { toast('Already claimed'); return; }
-
-  if (c.rewardType === 'tokens') {
-    state.balance += c.rewardAmount;
-    state.earned += c.rewardAmount;
-    if (!state.claimedChallenges) state.claimedChallenges = [];
-    state.claimedChallenges.push(id);
-    saveState();
-    updateBalance();
-    updateHeader();
-    renderShop();
-    toast('+' + c.rewardAmount + ' tokens — ' + c.name + ' claimed!', { reward: true });
-    if (navigator.vibrate) navigator.vibrate([30, 50, 30, 50, 60]);
-    return;
-  }
-
-  // Emoji reward (default)
-  if (state.ownedEmojis.includes(c.emoji)) { toast('Already owned'); return; }
-  state.ownedEmojis.push(c.emoji);
-  state.avatar = c.emoji;
-  if (!state.claimedChallenges) state.claimedChallenges = [];
-  if (!state.claimedChallenges.includes(id)) state.claimedChallenges.push(id);
-  // Optional bonus tokens (e.g. Finally Served gives 🧇 + 100 tokens)
-  let bonusMsg = '';
-  if (c.bonusTokens && c.bonusTokens > 0) {
-    state.balance += c.bonusTokens;
-    state.earned += c.bonusTokens;
-    bonusMsg = ' (+' + c.bonusTokens + ' ▣)';
-  }
+// Equip the first owned instance of a given emoji character. Used by challenge/secret-
+// challenge cards, which reference emoji by character rather than a specific instance.
+function equipEmojiChar(emoji) {
+  const inst = getInstancesOf(emoji)[0];
+  if (!inst) return;
+  equipInstance(inst.id);
   saveState();
-  updateBalance();
   updateHeader();
-  renderShop();
-  toast(c.emoji + ' ' + c.name + ' unlocked & equipped!' + bonusMsg, { reward: true });
-  if (navigator.vibrate) navigator.vibrate([30, 50, 30, 50, 60]);
+  if (mp.ready) mpPushProfile();
+  const shopActive = document.getElementById('view-shop').classList.contains('active');
+  const profileActive = document.getElementById('view-profile').classList.contains('active');
+  if (shopActive) renderShop();
+  if (profileActive) renderProfile();
+  toast('Equipped');
 }
 
-function equipEmoji(e) {
-  if (!state.ownedEmojis.includes(e)) return;
-  if (state.avatar === e) return; // already equipped — silent
-  state.avatar = e;
+// Equip a SPECIFIC owned instance (used by the collection grid, where duplicates
+// of the same emoji can have different float values — you're picking one exact copy).
+function equipInstanceUI(id) {
+  if (!equipInstance(id)) return;
   saveState();
   updateHeader();
   if (mp.ready) mpPushProfile();
@@ -2180,32 +2278,68 @@ function equipEmoji(e) {
   toast('Equipped');
 }
 
-// Featured shop items are sold at a discount. Rare emojis get a flat 10-token
-// price (overriding the 50% calc); other rarities are half-off, floor-rounded.
-// Pricing tiers in catalog: common=10, rare=25, epic=60, legendary=150
-//   → featured: common=5, rare=10, epic=30, legendary=75
-function getEffectivePrice(item, featured) {
-  if (!featured) return item.price;
-  if (item.rarity === 'rare') return 10;       // special override
-  return Math.floor(item.price / 2);
+/* ---- LOOT BOXES ----
+   Shop is pure gacha: no more picking an exact emoji to buy. Each box tier rolls
+   a random rarity (weighted), then a random emoji within that rarity from the
+   shop pool, and mints a brand-new owned instance with its own float value. */
+const LOOT_BOXES = [
+  { id: 'bronze', name: 'Bronze Box', price: 15,  icon: '📦', weights: { common: 70, rare: 25,   epic: 4.5,  legendary: 0.5 } },
+  { id: 'silver', name: 'Silver Box', price: 45,  icon: '🎁', weights: { common: 30, rare: 45,   epic: 22,   legendary: 3   } },
+  { id: 'gold',   name: 'Gold Box',   price: 100, icon: '🏆', weights: { common: 5,  rare: 25,   epic: 45,   legendary: 25  } },
+];
+function rollBoxRarity(weights) {
+  const entries = Object.entries(weights);
+  const total = entries.reduce((s, [, w]) => s + w, 0);
+  let r = Math.random() * total;
+  for (const [rarity, w] of entries) {
+    if (r < w) return rarity;
+    r -= w;
+  }
+  return entries[entries.length - 1][0];
 }
-
-function shopItemHtml(item, featured) {
-  const owned = state.ownedEmojis.includes(item.e);
-  const equipped = state.avatar === item.e;
-  const price = getEffectivePrice(item, featured);
-  let action;
-  if (equipped) action = '<div class="shop-action equipped">EQUIPPED</div>';
-  else if (owned) action = '<div class="shop-action owned">OWNED</div>';
-  else action = `<div class="shop-action buy">▣ ${price}</div>`;
-  const featuredAttr = featured ? ',true' : '';
-  return `
-    <div class="shop-item ${equipped ? 'equipped' : ''}" onclick="shopAction('${item.e}'${featuredAttr})">
-      <div class="shop-emoji">${item.e}</div>
-      <div class="shop-name">${item.name}</div>
-      ${action}
+function renderLootBoxes() {
+  const el = document.getElementById('loot-boxes');
+  if (!el) return;
+  el.innerHTML = LOOT_BOXES.map(box => `
+    <div class="lootbox-card">
+      <div class="lootbox-icon">${box.icon}</div>
+      <div class="lootbox-name">${box.name}</div>
+      <div class="lootbox-odds">
+        ${box.weights.legendary > 0 ? `<span class="lootbox-odd legendary">${box.weights.legendary}% Legendary</span>` : ''}
+        <span class="lootbox-odd epic">${box.weights.epic}% Epic</span>
+        <span class="lootbox-odd rare">${box.weights.rare}% Rare</span>
+      </div>
+      <button class="lootbox-open-btn" onclick="openLootBox('${box.id}')" ${state.balance < box.price ? 'disabled' : ''}>Open · ▣ ${box.price}</button>
     </div>
-  `;
+  `).join('');
+}
+function openLootBox(boxId) {
+  const box = LOOT_BOXES.find(b => b.id === boxId);
+  if (!box) return;
+  if (state.balance < box.price) { toast('Not enough tokens'); return; }
+  state.balance -= box.price;
+  const rarity = rollBoxRarity(box.weights);
+  const pool = getShopPool();
+  const byRarity = pool.filter(e => e.rarity === rarity);
+  const chosen = (byRarity.length ? byRarity : pool)[Math.floor(Math.random() * (byRarity.length ? byRarity.length : pool.length))];
+  const inst = addEmojiInstance(chosen.e, { source: 'box' });
+  saveState();
+  updateBalance();
+  updateHeader();
+  renderShop();
+  showBoxRevealPopup(box, chosen, inst);
+  if (navigator.vibrate) navigator.vibrate(chosen.rarity === 'legendary' ? [40, 60, 40, 60, 100] : chosen.rarity === 'epic' ? [20, 40, 20] : [15, 30]);
+}
+function showBoxRevealPopup(box, item, inst) {
+  const label = floatLabel(inst.float);
+  openModal(box.icon + ' ' + box.name + ' opened!', `
+    <div style="font-size:56px;text-align:center;margin:10px 0">${item.e}</div>
+    <div style="text-align:center">
+      <strong>${item.name}</strong><br>
+      <span class="shop-rarity-header ${item.rarity}" style="justify-content:center;margin-top:4px">${item.rarity.toUpperCase()}</span><br>
+      <span style="font-size:11px;color:var(--muted)">Float ${inst.float.toFixed(3)} · ${label}</span>
+    </div>
+  `, () => {});
 }
 
 // Emojis that can ONLY be unlocked through challenges (never browsable, never featured, never random rewards)
@@ -2278,108 +2412,6 @@ function getEmojiInfo(e) {
 function getShopPool() {
   const locked = getChallengeLockedEmojis();
   return EMOJI_CATALOG.filter(e => e.cat !== 'symbols' && !locked.has(e.e));
-}
-
-function renderShopBrowse() {
-  const container = document.getElementById('shop-content');
-  const pool = getShopPool();
-  let filtered;
-  if (runtime.shopCat === 'owned') {
-    // "Owned" virtual tab: every emoji the user owns, including challenge-claimed
-    // ones (which aren't in the regular catalog). getEmojiInfo() forces challenge
-    // emojis to a synthetic legendary record so they render correctly here.
-    filtered = state.ownedEmojis.map(e => getEmojiInfo(e));
-  } else if (runtime.shopCat === 'all') {
-    filtered = pool;
-  } else {
-    filtered = pool.filter(e => e.cat === runtime.shopCat);
-  }
-
-  // DEDUPE by emoji-key (the catalog has duplicates like 🙈/🙉/🙊 in both faces & animals,
-  // 🦂 listed twice, etc.). Keep first occurrence.
-  {
-    const seenE = new Set();
-    filtered = filtered.filter(item => {
-      if (seenE.has(item.e)) return false;
-      seenE.add(item.e);
-      return true;
-    });
-  }
-
-  // DESCENDING rarity (best first)
-  const rarityOrder = ['legendary', 'epic', 'rare', 'common'];
-  const byRarity = {};
-  for (const r of rarityOrder) byRarity[r] = [];
-  for (const item of filtered) {
-    const bucket = byRarity[item.rarity] ? item.rarity : 'common';
-    byRarity[bucket].push(item);
-  }
-
-  // Within each rarity bucket, sort owned emojis first
-  for (const r of rarityOrder) {
-    byRarity[r].sort((a, b) => {
-      const aOwned = state.ownedEmojis.includes(a.e);
-      const bOwned = state.ownedEmojis.includes(b.e);
-      if (aOwned && !bOwned) return -1;
-      if (!aOwned && bOwned) return 1;
-      return 0;
-    });
-  }
-
-  const sections = rarityOrder
-    .filter(r => byRarity[r].length > 0)
-    .map(r => `
-      <div class="shop-rarity-section">
-        <div class="shop-rarity-header ${r}">${r.toUpperCase()} <span class="count">· ${byRarity[r].length}</span></div>
-        <div class="shop-grid">
-          ${byRarity[r].map(shopItemHtml).join('')}
-        </div>
-      </div>
-    `).join('');
-
-  const emptyMsg = runtime.shopCat === 'owned'
-    ? '<div class="empty-state">No emojis owned yet.<br>Buy some, or earn them through challenges.</div>'
-    : '<div class="empty-state">No emojis in this category.</div>';
-
-  container.innerHTML = sections || emptyMsg;
-}
-
-function shopAction(emoji, featured) {
-  const item = getEmojiInfo(emoji);
-  if (!item) return;
-  // Challenge-locked emojis can't be purchased — they're claim-only via the challenges section.
-  // If a user taps a challenge-locked emoji they don't own (which shouldn't normally happen since
-  // they're hidden from browse), redirect them to claim it via challenges.
-  const locked = getChallengeLockedEmojis();
-  if (locked.has(emoji) && !state.ownedEmojis.includes(emoji)) {
-    toast('Earn this through a challenge');
-    return;
-  }
-  if (state.avatar === emoji) { toast('Already equipped'); return; }
-  if (state.ownedEmojis.includes(emoji)) {
-    state.avatar = emoji;
-    saveState();
-    updateHeader();
-    renderShop();
-    toast('Equipped ' + item.name);
-    return;
-  }
-  const price = getEffectivePrice(item, featured);
-  if (state.balance < price) { toast('Not enough tokens'); return; }
-  const priceLine = `<strong style="color:var(--gold)">${price} token${price>1?'s':''}</strong>`;
-  openModal('Buy ' + item.name + '?',
-    `<div style="font-size:48px;text-align:center;margin:8px 0">${item.e}</div><strong>${item.name}</strong><br>Price: ${priceLine}<br>Rarity: <strong>${item.rarity}</strong><br>You'll have ${state.balance - price} tokens after.`,
-    () => {
-      state.balance -= price;
-      state.ownedEmojis.push(emoji);
-      state.avatar = emoji;
-      saveState();
-      updateBalance();
-      updateHeader();
-      renderShop();
-      toast('Unlocked & equipped ' + item.name);
-    }
-  );
 }
 
 /* ---- MODAL & BUY ---- */
@@ -2872,34 +2904,44 @@ function getPlayerSyntheticProfile(name, avatar) {
     }
     safety++;
   }
-  return { games, wins, winRatePct, earned, streak, trophies, elo, collection };
+  return { games, wins, winRatePct, earned, streak, trophies, elo, collection, selected: collection[0] ? { item: collection[0], float: r() } : null };
 }
 // Backward-compat shim used in friend profile
 function getFriendSyntheticProfile(friend) {
   return getPlayerSyntheticProfile(friend.name, friend.avatar);
 }
 
-// Shared renderer for an "owned emojis" collection grid: groups by rarity descending,
-// dedupes by emoji key, and uses the read-only shop-item visual.
+// Shared renderer for an "owned emojis" collection grid: groups by rarity descending.
+// When items carry a real instance (item.instance), every copy is kept — duplicates
+// with different float values are meaningful. Otherwise (synthetic/catalog items,
+// e.g. an NPC friend's fake collection) dedupes by emoji-key as before.
 function renderOwnedCollectionHtml(items, opts) {
   opts = opts || {};
   const interactive = !!opts.interactive;
   if (!items || items.length === 0) {
     return '<div class="empty-state">No emojis owned yet.</div>';
   }
-  // Dedupe by emoji-key
-  const seenE = new Set();
-  const unique = items.filter(item => {
-    if (seenE.has(item.e)) return false;
-    seenE.add(item.e);
-    return true;
-  });
+  let list = items;
+  if (!items[0] || !items[0].instance) {
+    const seenE = new Set();
+    list = items.filter(item => {
+      if (seenE.has(item.e)) return false;
+      seenE.add(item.e);
+      return true;
+    });
+  }
   // Bucket by rarity
   const order = ['legendary', 'epic', 'rare', 'common'];
   const byRarity = { legendary: [], epic: [], rare: [], common: [] };
-  for (const item of unique) {
+  for (const item of list) {
     const bucket = byRarity[item.rarity] ? item.rarity : 'common';
     byRarity[bucket].push(item);
+  }
+  // Newest instances first within each rarity bucket
+  for (const r of order) {
+    if (byRarity[r][0] && byRarity[r][0].instance) {
+      byRarity[r].sort((a, b) => (b.instance.ts || 0) - (a.instance.ts || 0));
+    }
   }
   // Render section headers + grids per rarity
   return order.filter(r => byRarity[r].length > 0).map(r => `
@@ -2907,14 +2949,30 @@ function renderOwnedCollectionHtml(items, opts) {
       <div class="shop-rarity-header ${r}">${r.toUpperCase()} <span class="count">· ${byRarity[r].length}</span></div>
       <div class="shop-grid">
         ${byRarity[r].map(item => {
+          const inst = item.instance;
+          if (interactive && inst) {
+            const equipped = state.avatarInstanceId === inst.id;
+            const actionLabel = equipped ? 'EQUIPPED' : 'EQUIP';
+            const actionCls = equipped ? 'equipped' : 'owned';
+            const itemCls = 'shop-item' + (equipped ? ' equipped' : '');
+            const fromTag = inst.fromCode ? `<div class="shop-from" title="Traded from ${inst.fromCode}">↔ traded</div>` : '';
+            return `
+              <div class="${itemCls}" onclick="equipInstanceUI('${inst.id}')">
+                <div class="shop-emoji">${item.e}</div>
+                <div class="shop-name">${item.name}</div>
+                <div class="shop-float">${inst.float.toFixed(3)}</div>
+                ${fromTag}
+                <div class="shop-action ${actionCls}">${actionLabel}</div>
+              </div>
+            `;
+          }
           if (interactive) {
             const equipped = state.avatar === item.e;
             const safe = String(item.e).replace(/'/g, "\\'");
             const actionLabel = equipped ? 'EQUIPPED' : 'EQUIP';
             const actionCls = equipped ? 'equipped' : 'owned';
-            const itemCls = 'shop-item' + (equipped ? ' equipped' : '');
             return `
-              <div class="${itemCls}" onclick="equipEmoji('${safe}')">
+              <div class="shop-item ${equipped ? 'equipped' : ''}" onclick="equipEmojiChar('${safe}')">
                 <div class="shop-emoji">${item.e}</div>
                 <div class="shop-name">${item.name}</div>
                 <div class="shop-action ${actionCls}">${actionLabel}</div>
@@ -2934,18 +2992,231 @@ function renderOwnedCollectionHtml(items, opts) {
   `).join('');
 }
 
+/* ---- TRADE PAGE ----
+   One-item-for-one-item trades, real online friends only (added by Friend Code).
+   Both sides apply the swap locally once a trade is accepted — see mpAcceptTrade /
+   mpSendTradeOffer in multiplayer.js for the underlying Firebase exchange. */
+let tradeState = {
+  friendIdx: null,
+  friendUid: null,
+  theirCollection: {},      // {instanceId: {e, float, source}}
+  theirCollectionRef: null,
+  myItemId: null,
+  theirItemId: null,
+  incoming: [],              // pending incoming offers: {id, fromUid, fromName, fromAvatar, offer, request}
+};
+
+function renderTrade() {
+  const wrap = document.getElementById('trade-incoming-wrap');
+  const list = document.getElementById('trade-incoming-list');
+  if (tradeState.incoming.length > 0) {
+    wrap.style.display = 'block';
+    list.innerHTML = tradeState.incoming.map(t => `
+      <div class="trade-incoming-card">
+        <div style="font-size:12px;font-weight:700">${t.fromName} wants to trade</div>
+        <div class="trade-incoming-swap">
+          <span title="They give you">${t.offer.e}</span>
+          <span style="font-size:16px;color:var(--muted)">→</span>
+          <span title="They want your">${t.request.e}</span>
+        </div>
+        <div style="font-size:10px;color:var(--muted);text-align:center">Their ${floatLabel(t.offer.float)} (${t.offer.float.toFixed(3)}) for your ${floatLabel(t.request.float)} (${t.request.float.toFixed(3)})</div>
+        <div class="trade-incoming-btns">
+          <button class="btn-cancel" onclick="declineTradeOffer('${t.id}')">Decline</button>
+          <button class="btn-confirm" onclick="acceptTradeOffer('${t.id}')">Accept</button>
+        </div>
+      </div>
+    `).join('');
+  } else {
+    wrap.style.display = 'none';
+  }
+
+  const flist = document.getElementById('trade-friend-list');
+  const onlineFriends = (state.friends || []).filter(f => f.uid);
+  if (!mp.ready) {
+    flist.innerHTML = '<div class="empty-state">Online features unavailable.<br>Connect to Firebase first.</div>';
+  } else if (onlineFriends.length === 0) {
+    flist.innerHTML = '<div class="empty-state">Add a friend by Friend Code first.<br>Local demo friends can\'t trade.</div>';
+  } else {
+    flist.innerHTML = onlineFriends.map(f => {
+      const idx = state.friends.indexOf(f);
+      return `
+        <div class="friend-item friend-item-clickable trade-friend-row" onclick="openTradeWithFriend(${idx})">
+          <div class="friend-avatar">${f.avatar || '🤖'}</div>
+          <div class="friend-info">
+            <div class="friend-name">${f.name}</div>
+            <div class="friend-meta">Tap to build a trade offer</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+}
+
+function openTradeWithFriend(idx) {
+  const f = state.friends && state.friends[idx];
+  if (!f || !f.uid) { toast('Only real online friends can trade'); return; }
+  tradeState.friendIdx = idx;
+  tradeState.friendUid = f.uid;
+  tradeState.myItemId = null;
+  tradeState.theirItemId = null;
+  document.getElementById('trade-builder-title').textContent = 'Trade with ' + f.name;
+  document.getElementById('trade-builder').style.display = 'block';
+  showView('trade');
+  renderTradeMyItems();
+  document.getElementById('trade-their-items').innerHTML = '<div class="empty-state">Loading…</div>';
+  if (tradeState.theirCollectionRef) tradeState.theirCollectionRef.off('value');
+  tradeState.theirCollectionRef = mpWatchCollection(f.uid, (compact) => {
+    tradeState.theirCollection = compact;
+    renderTradeTheirItems();
+  });
+  updateTradeSendBtn();
+}
+function closeTradeBuilder() {
+  document.getElementById('trade-builder').style.display = 'none';
+  if (tradeState.theirCollectionRef) { tradeState.theirCollectionRef.off('value'); tradeState.theirCollectionRef = null; }
+  tradeState.friendIdx = null;
+  tradeState.friendUid = null;
+  mpCancelTradeOffer();
+}
+function renderTradeMyItems() {
+  const el = document.getElementById('trade-my-items');
+  el.innerHTML = state.ownedEmojis.map(inst => {
+    const info = getEmojiInfo(inst.e);
+    const sel = tradeState.myItemId === inst.id;
+    return `
+      <div class="trade-item ${sel ? 'selected' : ''}" onclick="selectMyTradeItem('${inst.id}')">
+        <div class="shop-emoji">${inst.e}</div>
+        <div class="shop-name">${info.name}</div>
+        <div class="shop-float">${inst.float.toFixed(3)}</div>
+      </div>
+    `;
+  }).join('') || '<div class="empty-state">You own nothing to trade yet.</div>';
+}
+function renderTradeTheirItems() {
+  const el = document.getElementById('trade-their-items');
+  const ids = Object.keys(tradeState.theirCollection);
+  el.innerHTML = ids.map(id => {
+    const item = tradeState.theirCollection[id];
+    const info = getEmojiInfo(item.e);
+    const sel = tradeState.theirItemId === id;
+    return `
+      <div class="trade-item ${sel ? 'selected' : ''}" onclick="selectTheirTradeItem('${id}')">
+        <div class="shop-emoji">${item.e}</div>
+        <div class="shop-name">${info.name}</div>
+        <div class="shop-float">${item.float.toFixed(3)}</div>
+      </div>
+    `;
+  }).join('') || '<div class="empty-state">They own nothing yet.</div>';
+}
+function selectMyTradeItem(id) {
+  tradeState.myItemId = tradeState.myItemId === id ? null : id;
+  renderTradeMyItems();
+  updateTradeSendBtn();
+}
+function selectTheirTradeItem(id) {
+  tradeState.theirItemId = tradeState.theirItemId === id ? null : id;
+  renderTradeTheirItems();
+  updateTradeSendBtn();
+}
+function updateTradeSendBtn() {
+  const btn = document.getElementById('trade-send-btn');
+  if (!btn) return;
+  if (tradeState.myItemId && tradeState.theirItemId) {
+    btn.disabled = false;
+    btn.textContent = 'Send Trade Offer';
+  } else {
+    btn.disabled = true;
+    btn.textContent = 'Select one item from each side';
+  }
+}
+function sendTradeOffer() {
+  if (!tradeState.myItemId || !tradeState.theirItemId || !tradeState.friendUid) return;
+  const myInst = getInstanceById(tradeState.myItemId);
+  const theirItem = tradeState.theirCollection[tradeState.theirItemId];
+  if (!myInst || !theirItem) { toast('Item no longer available'); return; }
+  const offerItem = { id: myInst.id, e: myInst.e, float: myInst.float };
+  const requestItem = { id: tradeState.theirItemId, e: theirItem.e, float: theirItem.float };
+  document.getElementById('trade-send-btn').disabled = true;
+  document.getElementById('trade-send-btn').textContent = 'Waiting for response…';
+  mpSendTradeOffer(tradeState.friendUid, offerItem, requestItem, (result) => {
+    if (result === 'accepted') {
+      // Apply OUR side of the swap: give away what we offered, receive what we asked for.
+      removeInstanceById(offerItem.id);
+      addEmojiInstance(requestItem.e, { source: 'trade', float: requestItem.float, fromCode: tradeState.friendUid });
+      if (state.avatarInstanceId === offerItem.id) {
+        const fallback = state.ownedEmojis[0];
+        if (fallback) equipInstance(fallback.id);
+      }
+      saveState();
+      updateHeader();
+      if (mp.ready) mpPushProfile();
+      toast('Trade complete! Received ' + requestItem.e, { reward: true });
+      closeTradeBuilder();
+      renderTrade();
+    } else {
+      updateTradeSendBtn();
+      toast(result === 'declined' ? 'Trade declined' : 'No response — offer expired');
+    }
+  });
+}
+
+function showIncomingTrade(t) {
+  tradeState.incoming.push(t);
+  toast('↔ ' + t.fromName + ' sent a trade offer — check the Trade tab');
+  if (navigator.vibrate) navigator.vibrate([15, 30, 15]);
+  if (document.getElementById('view-trade').classList.contains('active')) renderTrade();
+}
+function acceptTradeOffer(id) {
+  const t = tradeState.incoming.find(x => x.id === id);
+  if (!t) return;
+  if (!getInstanceById(t.request.id)) {
+    toast("You no longer have that item");
+    declineTradeOffer(id);
+    return;
+  }
+  mpAcceptTrade(t, () => {
+    // Apply OUR side: give away the requested item, receive their offered item.
+    removeInstanceById(t.request.id);
+    addEmojiInstance(t.offer.e, { source: 'trade', float: t.offer.float, fromCode: t.fromUid });
+    if (state.avatarInstanceId === t.request.id) {
+      const fallback = state.ownedEmojis[0];
+      if (fallback) equipInstance(fallback.id);
+    }
+    saveState();
+    updateHeader();
+    if (mp.ready) mpPushProfile();
+    tradeState.incoming = tradeState.incoming.filter(x => x.id !== id);
+    toast('Trade complete! Received ' + t.offer.e, { reward: true });
+    renderTrade();
+  });
+}
+function declineTradeOffer(id) {
+  const t = tradeState.incoming.find(x => x.id === id);
+  if (!t) return;
+  mpDeclineTrade(t);
+  tradeState.incoming = tradeState.incoming.filter(x => x.id !== id);
+  renderTrade();
+}
+
 let _friendProfileIdx = null;
 function openFriendProfile(idx) {
   const f = state.friends && state.friends[idx];
   if (!f) return;
   _friendProfileIdx = idx;
-  const synth = getFriendSyntheticProfile(f);
-  const tier = getTier(synth.elo);
 
-  document.getElementById('fp-avatar').textContent = f.avatar || '🤖';
-  document.getElementById('fp-name').textContent = f.name;
+  // Real online-linked friend with presence data pushed → use their REAL stats.
+  // Otherwise (local/demo friend, or online friend whose presence hasn't loaded
+  // yet) fall back to the deterministic synthetic profile as before.
+  const real = f.uid ? mp.friendPresence[f.uid] : null;
+  const isReal = !!(real && real.wins !== undefined);
+  const synth = getFriendSyntheticProfile(f);
+  const elo = isReal ? (real.elo || 1000) : synth.elo;
+  const tier = getTier(elo);
+
+  document.getElementById('fp-avatar').textContent = (isReal ? real.avatar : f.avatar) || '🤖';
+  document.getElementById('fp-name').textContent = (isReal ? real.username : f.name) || f.name;
   const tierEl = document.getElementById('fp-tier');
-  tierEl.textContent = `${tier.name} · ${synth.elo} ELO`;
+  tierEl.textContent = `${tier.name} · ${elo} ELO`;
   tierEl.style.color = tier.color;
 
   // Online/offline status — same source of truth as the friends list
@@ -2953,18 +3224,57 @@ function openFriendProfile(idx) {
   const statusEl = document.getElementById('fp-status');
   statusEl.classList.remove('online', 'offline');
   statusEl.classList.add(online ? 'online' : 'offline');
-  document.getElementById('fp-status-label').textContent = online ? 'Online' : 'Offline';
+  document.getElementById('fp-status-label').textContent = online ? (isReal ? 'Online · Real Player' : 'Online') : 'Offline';
 
-  document.getElementById('fp-wins').textContent = synth.wins;
-  document.getElementById('fp-winrate').textContent = synth.winRatePct + '%';
-  document.getElementById('fp-earned').textContent = synth.earned;
-  document.getElementById('fp-streak').textContent = synth.streak;
-  document.getElementById('fp-trophies').textContent = synth.trophies;
-  document.getElementById('fp-games').textContent = synth.games;
+  document.getElementById('fp-wins').textContent = isReal ? real.wins : synth.wins;
+  document.getElementById('fp-winrate').textContent = isReal
+    ? (real.games > 0 ? Math.round(real.wins / real.games * 100) + '%' : '—')
+    : synth.winRatePct + '%';
+  const eqEl = document.getElementById('fp-earned');
+  const eqSubEl = document.getElementById('fp-earned-sub');
+  if (isReal && real.eqFloat !== null && real.eqFloat !== undefined) {
+    eqEl.textContent = real.eqFloat.toFixed(3);
+    eqEl.style.color = real.eqRarity ? `var(--${real.eqRarity})` : '';
+    if (eqSubEl) eqSubEl.textContent = (real.eqRarity || '').toUpperCase() + (real.eqRarity ? ' · ' + floatLabel(real.eqFloat) : '');
+  } else if (synth.selected) {
+    eqEl.textContent = synth.selected.float.toFixed(3);
+    eqEl.style.color = `var(--${synth.selected.item.rarity})`;
+    if (eqSubEl) eqSubEl.textContent = synth.selected.item.rarity.toUpperCase() + ' · ' + floatLabel(synth.selected.float);
+  } else {
+    eqEl.textContent = '—';
+    eqEl.style.color = '';
+    if (eqSubEl) eqSubEl.textContent = '';
+  }
+  document.getElementById('fp-streak').textContent = isReal ? real.bestStreak : synth.streak;
+  document.getElementById('fp-trophies').textContent = isReal ? real.tourneysWon : synth.trophies;
+  document.getElementById('fp-games').textContent = isReal ? real.games : synth.games;
 
-  document.getElementById('fp-collection-count').textContent = synth.collection.length;
   const collEl = document.getElementById('fp-collection');
-  collEl.innerHTML = renderOwnedCollectionHtml(synth.collection);
+  if (isReal && f.uid) {
+    // Live-fetch their real public collection for display.
+    collEl.innerHTML = '<div class="empty-state">Loading collection…</div>';
+    mpWatchCollection(f.uid, (compact) => {
+      if (!document.getElementById('view-friend-profile').classList.contains('active')) return;
+      const items = Object.keys(compact).map(id => Object.assign({}, getEmojiInfo(compact[id].e), { instance: Object.assign({ id }, compact[id]) }));
+      document.getElementById('fp-collection-count').textContent = items.length;
+      collEl.innerHTML = renderOwnedCollectionHtml(items, { interactive: false });
+    });
+  } else {
+    document.getElementById('fp-collection-count').textContent = synth.collection.length;
+    collEl.innerHTML = renderOwnedCollectionHtml(synth.collection);
+  }
+
+  // Trade button — only for real online-linked friends
+  const tradeBtn = document.getElementById('fp-trade-btn');
+  if (tradeBtn) {
+    if (f.uid && mp.ready) {
+      tradeBtn.style.display = '';
+      tradeBtn.onclick = () => openTradeWithFriend(idx);
+    } else {
+      tradeBtn.style.display = 'none';
+      tradeBtn.onclick = null;
+    }
+  }
 
   // Wire the remove button (closure over current idx) — uses the generic confirm modal.
   const rmBtn = document.getElementById('fp-remove-btn');
@@ -3086,6 +3396,43 @@ function dismissInstall() {
   try { localStorage.setItem('rps-install-dismissed', '1'); } catch(e) {}
 }
 
+/* ---- FULLSCREEN ----
+   Two layers: the installed PWA (Add to Home Screen) is already fullscreen via
+   manifest display mode — nothing to do there. This button additionally triggers
+   the real browser Fullscreen API so the game can go edge-to-edge even in a
+   regular browser tab (no install required). iOS Safari doesn't support the
+   Fullscreen API for web content (Apple platform restriction) — installing to
+   the home screen is the only way to get a chrome-less view there. */
+function _fsElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement || null;
+}
+function toggleFullscreen() {
+  const el = document.documentElement;
+  if (_fsElement()) {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+    if (exit) exit.call(document);
+    return;
+  }
+  const request = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+  if (!request) {
+    if (isIOS() && !isStandalone()) {
+      toast('iOS Safari blocks fullscreen for web pages — use Share → Add to Home Screen instead');
+    } else {
+      toast('Fullscreen not supported in this browser');
+    }
+    return;
+  }
+  request.call(el).catch(() => toast('Fullscreen request was blocked'));
+}
+document.addEventListener('fullscreenchange', _updateFullscreenBtn);
+document.addEventListener('webkitfullscreenchange', _updateFullscreenBtn);
+function _updateFullscreenBtn() {
+  const btn = document.getElementById('fullscreen-btn');
+  if (!btn) return;
+  btn.classList.toggle('on', !!_fsElement());
+  btn.textContent = _fsElement() ? '⛶' : '⛶';
+}
+
 /* ---- INIT ---- */
 applyTheme();
 updateBalance();
@@ -3096,6 +3443,7 @@ refreshFeatured();
 // Wire the multiplayer module's callbacks into the UI, then connect.
 mp.onStatusChange = updateOnlineStatusUI;
 mp.onIncomingInvite = showIncomingInvite;
+mp.onIncomingTrade = showIncomingTrade;
 mp.onOpponentForfeit = () => {
   const g = runtime.gameState;
   if (!g || g.done || !runtime.online) return;
@@ -3124,15 +3472,24 @@ if (isIOS() && !isStandalone()) {
   } catch(e) {}
 }
 
-/* ---- SWIPE-TO-SWITCH-TABS ----
+/* ---- SWIPE-TO-SWITCH-TABS / SWIPE-TO-GO-BACK ----
    Horizontal swipe on the view-wrap cycles main tabs. Vertical scroll wins ties.
+   On secondary views (tiers, leaderboard, friends list, friend profile), any clear
+   horizontal swipe instead acts as "go back" — same destination as their back button.
    Disabled while in-game (chrome is hidden, and we don't want forfeits via swipe). */
-const TAB_ORDER = ['lobby', 'profile', 'history', 'shop'];
+const TAB_ORDER = ['lobby', 'profile', 'history', 'shop', 'trade'];
 const TAB_RENDERERS = {
   lobby:   () => {},
   profile: () => renderProfile(),
   history: () => renderHistory(),
   shop:    () => renderShop(),
+  trade:   () => renderTrade(),
+};
+const BACK_ACTIONS = {
+  tiers: () => showView('lobby'),
+  leaderboard: () => { showView('tiers'); renderTiers(); },
+  friends: () => showView('lobby'),
+  'friend-profile': () => { showView('friends'); renderFriends(); },
 };
 (function setupTabSwipe() {
   const wrap = document.querySelector('.view-wrap');
@@ -3146,6 +3503,10 @@ const TAB_RENDERERS = {
       if (v && v.classList.contains('active')) return id;
     }
     return null;
+  }
+  function activeViewId() {
+    const el = document.querySelector('.view.active');
+    return el ? el.id.replace(/^view-/, '') : null;
   }
   function inGame() {
     return document.getElementById('app').classList.contains('in-game');
@@ -3175,16 +3536,20 @@ const TAB_RENDERERS = {
     const dy = t.clientY - startY;
     if (Math.abs(dx) < SWIPE_MIN) return;
     if (Math.abs(dx) < Math.abs(dy) * SWIPE_RATIO) return;
-    // Determine direction; left swipe = next tab, right = prev
+    // Main tabs: direction matters (left = next, right = prev)
     const cur = currentTab();
-    if (!cur) return;
-    const idx = TAB_ORDER.indexOf(cur);
-    if (idx < 0) return;
-    let next;
-    if (dx < 0) next = TAB_ORDER[(idx + 1) % TAB_ORDER.length];
-    else        next = TAB_ORDER[(idx - 1 + TAB_ORDER.length) % TAB_ORDER.length];
-    showView(next);
-    if (TAB_RENDERERS[next]) TAB_RENDERERS[next]();
+    if (cur) {
+      const idx = TAB_ORDER.indexOf(cur);
+      let next;
+      if (dx < 0) next = TAB_ORDER[(idx + 1) % TAB_ORDER.length];
+      else        next = TAB_ORDER[(idx - 1 + TAB_ORDER.length) % TAB_ORDER.length];
+      showView(next);
+      if (TAB_RENDERERS[next]) TAB_RENDERERS[next]();
+      return;
+    }
+    // Secondary views: either direction just goes back, matching the back button.
+    const activeId = activeViewId();
+    if (activeId && BACK_ACTIONS[activeId]) BACK_ACTIONS[activeId]();
   }, { passive: true });
 })();
 

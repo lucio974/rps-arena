@@ -22,15 +22,19 @@ const mp = {
   role: null,             // 'p1' or 'p2' within the current match
   friendPresence: {},     // uid -> presence snapshot, kept live for friends list
   _queueListener: null,
+  _queueWatchRef: null,
   _matchListener: null,
   _roundListener: null,
   _pendingReveal: null,   // {round, pick, nonce}
   _pendingInvite: null,
   _inviteRef: null,
+  _pendingTrade: null,
+  _tradeRef: null,
   _friendPresenceRefs: {},
   // Callbacks wired up by app.js
   onStatusChange: null,   // (status:'connecting'|'online'|'offline') => void
   onIncomingInvite: null, // (invite) => void
+  onIncomingTrade: null,  // (trade) => void
   onOpponentForfeit: null,
 };
 
@@ -57,6 +61,7 @@ function mpInit(cb) {
     mp.uid = cred.user.uid;
     _setupPresence();
     _watchInvites();
+    _watchTrades();
     mp.ready = true;
     mp.onStatusChange && mp.onStatusChange('online');
     cb && cb(true);
@@ -81,18 +86,53 @@ function _setupPresence() {
     mpPushProfile();
   });
 }
-// Push the player's current public profile (name/avatar/elo) to presence.
-// Call this whenever the local profile changes (name edit, avatar change, ELO change).
+// Push the player's current public profile (name/avatar/elo/real stats) to presence,
+// plus their public collection (used for real friend profiles and trade browsing).
+// Call this whenever the local profile changes (name edit, avatar change, ELO change,
+// match results, equip changes).
 function mpPushProfile() {
   if (!mp.ready && !mp.uid) return;
+  let eqFloat = null, eqRarity = null;
+  try {
+    const eq = typeof equippedInstance === 'function' ? equippedInstance() : null;
+    if (eq) {
+      eqFloat = eq.float;
+      eqRarity = (typeof getEmojiInfo === 'function' && getEmojiInfo(eq.e)) ? getEmojiInfo(eq.e).rarity : null;
+    }
+  } catch (e) { /* app.js not fully ready yet — presence stats stay best-effort */ }
   firebase.database().ref('presence/' + mp.uid).update({
     username: state.username,
     avatar: state.avatar,
     elo: state.elo,
+    wins: state.wins || 0,
+    games: state.games || 0,
+    bestStreak: state.bestStreak || 0,
+    tourneysWon: state.tourneysWon || 0,
+    eqFloat, eqRarity,
     online: true,
     status: 'idle',
     lastSeen: firebase.database.ServerValue.TIMESTAMP,
   });
+  mpPushCollection();
+}
+// Push a compact public copy of the player's owned-emoji instances. Read by real
+// friend profiles and the Trade page (to browse what a friend has to offer).
+function mpPushCollection() {
+  if (!mp.ready || typeof state === 'undefined') return;
+  const compact = {};
+  (state.ownedEmojis || []).forEach((inst) => {
+    compact[inst.id] = { e: inst.e, float: inst.float, source: inst.source };
+  });
+  firebase.database().ref('collections/' + mp.uid).set(compact);
+}
+// Live-watch another player's public collection (one-shot with ongoing updates).
+// Returns the ref so the caller can .off() it when done. cb receives a plain
+// {instanceId: {e, float, source}} map (empty object if they own nothing / not found).
+function mpWatchCollection(uid, cb) {
+  if (!mp.ready) return null;
+  const ref = firebase.database().ref('collections/' + uid);
+  ref.on('value', (snap) => cb(snap.val() || {}));
+  return ref;
 }
 function mpSetStatus(status, extra) {
   if (!mp.ready) return;
@@ -144,22 +184,37 @@ function mpFindMatch(onFound, onError) {
       if (child.key !== mp.uid && !opponent) opponent = Object.assign({ uid: child.key }, child.val());
     });
     if (opponent) {
-      db.ref('queue/' + opponent.uid).transaction((cur) => {
-        if (cur && cur.waiting) {
-          cur.waiting = false;
-          cur.matchedWith = mp.uid;
-          return cur;
-        }
-        return; // abort transaction — someone else grabbed them
-      }, (err, committed, snap2) => {
-        if (!err && committed && snap2.val() && snap2.val().matchedWith === mp.uid) {
-          _createMatch(opponent, onFound);
-        } else {
-          _enqueueSelf(onFound);
-        }
-      });
+      _attemptGrab(opponent, onFound, () => _enqueueSelf(onFound));
     } else {
       _enqueueSelf(onFound);
+    }
+  });
+}
+// Tie-breaker so two players who discover each other at almost the same instant don't
+// BOTH successfully "grab" each other and end up creating two separate match documents
+// for the same pairing — only the lexicographically-smaller uid ever initiates a grab.
+// The other side just keeps waiting; it'll be grabbed in turn.
+function _attemptGrab(opponent, onFound, onFail) {
+  if (mp.uid > opponent.uid) { onFail(); return; }
+  const db = firebase.database();
+  db.ref('queue/' + opponent.uid).transaction((cur) => {
+    if (cur && cur.waiting) {
+      cur.waiting = false;
+      cur.matchedWith = mp.uid;
+      return cur;
+    }
+    return; // abort transaction — someone else grabbed them, or they left
+  }, (err, committed, snap2) => {
+    if (!err && committed && snap2.val() && snap2.val().matchedWith === mp.uid) {
+      _stopWatchingQueue();
+      if (mp._queueListener) {
+        mp._queueListener.ref.off('value', mp._queueListener.listener);
+        mp._queueListener.ref.remove();
+        mp._queueListener = null;
+      }
+      _createMatch(opponent, onFound);
+    } else {
+      onFail();
     }
   });
 }
@@ -178,13 +233,37 @@ function _enqueueSelf(onFound) {
     if (v && v.waiting === false && v.matchId) {
       myQ.off('value', listener);
       myQ.remove();
+      _stopWatchingQueue();
       mpJoinMatch(v.matchId, 'p2', onFound);
     }
   });
   mp._queueListener = { ref: myQ, listener };
+  // Keep watching for anyone ELSE who starts waiting too — covers the race where two
+  // players tap "Find Match" within the same instant and each one's initial one-shot
+  // query missed the other (neither had enqueued yet when the other's query ran).
+  _watchQueueForOpponent(onFound);
+}
+function _watchQueueForOpponent(onFound) {
+  const db = firebase.database();
+  const ref = db.ref('queue').orderByChild('waiting').equalTo(true);
+  const listener = ref.on('child_added', (snap) => {
+    if (snap.key === mp.uid) return;
+    if (!mp._queueListener) return; // already matched/cancelled
+    const opponent = Object.assign({ uid: snap.key }, snap.val());
+    if (!opponent.waiting) return;
+    _attemptGrab(opponent, onFound, () => {});
+  });
+  mp._queueWatchRef = { ref, listener };
+}
+function _stopWatchingQueue() {
+  if (mp._queueWatchRef) {
+    mp._queueWatchRef.ref.off('child_added', mp._queueWatchRef.listener);
+    mp._queueWatchRef = null;
+  }
 }
 function mpCancelSearch() {
   if (!mp.ready) return;
+  _stopWatchingQueue();
   if (mp._queueListener) {
     mp._queueListener.ref.off('value', mp._queueListener.listener);
     mp._queueListener = null;
@@ -355,4 +434,74 @@ function mpAcceptInvite(inv, onFound) {
 }
 function mpDeclineInvite(inv) {
   firebase.database().ref('invites/' + mp.uid + '/' + inv.id).update({ status: 'declined' });
+}
+
+/* ---- TRADING ----
+   One-item-for-one-item offers between two online-linked players. Both sides
+   trust the trade record (same pattern as invites) — reasonable for a casual
+   game, not tamper-proof against a determined cheater. */
+function _watchTrades() {
+  const ref = firebase.database().ref('trades/' + mp.uid);
+  ref.on('child_added', (snap) => {
+    const t = snap.val();
+    if (t && t.status === 'pending') {
+      mp.onIncomingTrade && mp.onIncomingTrade(Object.assign({ id: snap.key }, t));
+    }
+  });
+  mp._tradeRef = ref;
+}
+// offerItem/requestItem: { id, e, float } — the exact instance being offered / asked for.
+function mpSendTradeOffer(toUid, offerItem, requestItem, onResult) {
+  if (!mp.ready) { onResult && onResult('offline'); return; }
+  const db = firebase.database();
+  const tRef = db.ref('trades/' + toUid).push();
+  tRef.set({
+    fromUid: mp.uid, fromName: state.username, fromAvatar: state.avatar,
+    offer: offerItem, request: requestItem,
+    status: 'pending',
+    createdAt: firebase.database.ServerValue.TIMESTAMP,
+  });
+  tRef.onDisconnect().remove();
+  const listener = tRef.on('value', (snap) => {
+    const v = snap.val();
+    if (!v) return;
+    if (v.status === 'accepted') {
+      tRef.off('value', listener);
+      tRef.remove();
+      mp._pendingTrade = null;
+      onResult && onResult('accepted', v);
+    } else if (v.status === 'declined') {
+      tRef.off('value', listener);
+      tRef.remove();
+      mp._pendingTrade = null;
+      onResult && onResult('declined');
+    }
+  });
+  mp._pendingTrade = { ref: tRef, listener };
+  setTimeout(() => {
+    if (mp._pendingTrade && mp._pendingTrade.ref.key === tRef.key) {
+      tRef.off('value', listener);
+      tRef.remove();
+      mp._pendingTrade = null;
+      onResult && onResult('timeout');
+    }
+  }, 30000);
+}
+function mpCancelTradeOffer() {
+  if (mp._pendingTrade) {
+    mp._pendingTrade.ref.off('value', mp._pendingTrade.listener);
+    mp._pendingTrade.ref.remove();
+    mp._pendingTrade = null;
+  }
+}
+// Recipient accepts — just flips the status; both sides apply the local swap
+// once they observe 'accepted' (offerer via the listener above, accepter directly).
+function mpAcceptTrade(t, onDone) {
+  firebase.database().ref('trades/' + mp.uid + '/' + t.id).update({ status: 'accepted' }).then(() => {
+    onDone && onDone();
+    firebase.database().ref('trades/' + mp.uid + '/' + t.id).remove();
+  });
+}
+function mpDeclineTrade(t) {
+  firebase.database().ref('trades/' + mp.uid + '/' + t.id).update({ status: 'declined' });
 }
