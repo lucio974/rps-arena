@@ -19,6 +19,7 @@
 
     "queue": {
       ".read": "auth != null",
+      ".indexOn": ["waiting"],
       "$uid": {
         ".write": "auth != null"
       }
@@ -44,6 +45,15 @@
       ".read": "auth != null",
       "$uid": {
         "$tradeId": {
+          ".write": "auth != null"
+        }
+      }
+    },
+
+    "friendAdds": {
+      ".read": "auth != null",
+      "$uid": {
+        "$fromUid": {
           ".write": "auth != null"
         }
       }

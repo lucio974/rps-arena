@@ -35,6 +35,7 @@ const mp = {
   onStatusChange: null,   // (status:'connecting'|'online'|'offline') => void
   onIncomingInvite: null, // (invite) => void
   onIncomingTrade: null,  // (trade) => void
+  onFriendAdded: null,    // (fromUid, {name, avatar}) => void
   onOpponentForfeit: null,
 };
 
@@ -62,6 +63,7 @@ function mpInit(cb) {
     _setupPresence();
     _watchInvites();
     _watchTrades();
+    _watchFriendAdds();
     mp.ready = true;
     mp.onStatusChange && mp.onStatusChange('online');
     cb && cb(true);
@@ -173,6 +175,31 @@ function mpLookupPlayer(uid, cb) {
   });
 }
 
+/* ---- MUTUAL FRIENDING ----
+   Adding someone by their Friend Code only updated YOUR list — they had no way of
+   knowing you'd added them, so they couldn't message/challenge you back until they
+   separately added your code too. This mirrors the add: when A adds B, a small
+   notice is left at friendAdds/{B}/{A} so B's client auto-adds A back next time
+   B is online (whether that's the same session or a later one). */
+function mpNotifyFriendAdd(toUid) {
+  if (!mp.ready) return;
+  firebase.database().ref('friendAdds/' + toUid + '/' + mp.uid).set({
+    name: state.username, avatar: state.avatar,
+    ts: firebase.database.ServerValue.TIMESTAMP,
+  });
+}
+function _watchFriendAdds() {
+  const ref = firebase.database().ref('friendAdds/' + mp.uid);
+  ref.on('child_added', (snap) => {
+    const fromUid = snap.key;
+    const data = snap.val();
+    if (fromUid && data) mp.onFriendAdded && mp.onFriendAdded(fromUid, data);
+    // Ack/clear so it doesn't re-fire (as a fresh child_added) on every future session.
+    snap.ref.remove();
+  });
+  mp._friendAddsRef = ref;
+}
+
 /* ---- RANDOM MATCHMAKING ---- */
 function mpFindMatch(onFound, onError) {
   if (!mp.ready) { onError && onError('offline'); return; }
@@ -188,6 +215,12 @@ function mpFindMatch(onFound, onError) {
     } else {
       _enqueueSelf(onFound);
     }
+  }, (err) => {
+    // Most likely cause: Realtime Database security rules haven't been (re)published
+    // in the Firebase Console yet — editing the local rules file alone doesn't affect
+    // the live project. See FIREBASE_SETUP.md.
+    console.error('[multiplayer] queue read failed — check that database.rules.json has been published in the Firebase Console:', err);
+    onError && onError('permission');
   });
 }
 // Tie-breaker so two players who discover each other at almost the same instant don't

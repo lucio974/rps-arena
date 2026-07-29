@@ -22,7 +22,7 @@
     --surface2:#1e1e2a;--surface3:#26263a;--border:#2e2e44;
     --text:#e8e8f0;--muted:#888;--accent:#4f8ef7;--danger:#e24b4a;
     --success:#3b9a5a;--win:#FFB562;--epic:#a96bff;--rare:#4f8ef7;--common:#888;
-    --legendary:#ff9b3d;
+    --legendary:#ff9b3d;--mythical:#FF3EC9;
     --safe-top:env(safe-area-inset-top,0px);
     --safe-bot:env(safe-area-inset-bottom,0px);
   }
@@ -112,6 +112,8 @@
     padding:30px 20px;text-align:center;display:none}
   .pulse{width:54px;height:54px;border-radius:50%;border:3px solid var(--accent);
     border-top-color:transparent;animation:spin 1s linear infinite;margin:0 auto 16px}
+  .pulse-mini{width:16px;height:16px;border-radius:50%;border:2px solid var(--accent);
+    border-top-color:transparent;animation:spin .8s linear infinite;margin:0 auto}
   @keyframes spin{to{transform:rotate(360deg)}}
 
   .game-header{background:var(--surface);border:1px solid var(--border);border-radius:14px;
@@ -314,11 +316,9 @@
   .buy-btn{background:var(--surface2);border:1px solid var(--gold);color:var(--gold);
     border-radius:8px;padding:6px 10px;font-size:14px;font-weight:700;cursor:pointer;-webkit-user-select:none;line-height:1}
   .buy-btn:active{background:var(--gold);color:#000}
-  .fullscreen-btn{background:var(--surface2);border:1px solid var(--border);color:var(--muted);
-    border-radius:8px;width:34px;height:34px;font-size:16px;cursor:pointer;flex-shrink:0;-webkit-user-select:none;
-    display:flex;align-items:center;justify-content:center}
-  .fullscreen-btn:active{background:var(--surface3);color:var(--gold)}
-  .fullscreen-btn.on{color:var(--gold);border-color:var(--gold)}
+  .trade-shortcut{font-size:22px;cursor:pointer;flex-shrink:0;-webkit-user-select:none;
+    display:flex;align-items:center;justify-content:center;padding:4px;line-height:1}
+  .trade-shortcut:active{transform:scale(.88)}
 
   .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);display:none;
     align-items:center;justify-content:center;z-index:100;padding:20px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
@@ -409,6 +409,7 @@
   .shop-rarity-header.rare{color:var(--rare)}
   .shop-rarity-header.epic{color:var(--epic)}
   .shop-rarity-header.legendary{color:var(--legendary)}
+  .shop-rarity-header.mythical{color:var(--mythical)}
   .shop-rarity-header .count{color:var(--muted);font-weight:500;letter-spacing:.05em}
 
   .shop-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
@@ -425,6 +426,11 @@
   .shop-action.equipped{color:var(--gold)}
   .shop-action.free{color:var(--success)}
   .shop-action.locked{color:var(--muted)}
+  .shop-action.common{color:var(--common)}
+  .shop-action.rare{color:var(--rare)}
+  .shop-action.epic{color:var(--epic)}
+  .shop-action.legendary{color:var(--legendary)}
+  .shop-action.mythical{color:var(--mythical)}
   .shop-float{font-size:8px;color:var(--gold);font-weight:700;letter-spacing:.03em;margin-bottom:2px}
   .shop-from{font-size:8px;color:var(--accent);font-weight:600;letter-spacing:.02em;margin-bottom:2px}
 
@@ -436,8 +442,17 @@
   .lootbox-odds{display:flex;flex-direction:column;gap:2px;margin:4px 0}
   .lootbox-odd{font-size:8px;font-weight:700;letter-spacing:.03em}
   .lootbox-odd.legendary{color:var(--legendary)}
+  .lootbox-odd.mythical{color:var(--mythical)}
   .lootbox-odd.epic{color:var(--epic)}
   .lootbox-odd.rare{color:var(--rare)}
+
+  /* BOX OPENING ANIMATION */
+  #box-opening-overlay .modal{text-align:center}
+  #box-cycle-emoji{font-size:64px;margin:16px 0;line-height:1;animation:boxwobble .3s ease-in-out infinite alternate}
+  @keyframes boxwobble{from{transform:scale(1) rotate(-4deg)}to{transform:scale(1.08) rotate(4deg)}}
+
+  /* Long-press affordance (visual only — the hold logic lives in JS) */
+  .long-pressable{-webkit-touch-callout:none}
   .lootbox-open-btn{width:100%;background:var(--gold);color:#000;border:none;border-radius:8px;padding:9px 4px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.03em;margin-top:4px;-webkit-user-select:none}
   .lootbox-open-btn:active:not(:disabled){transform:scale(.96)}
   .lootbox-open-btn:disabled{opacity:.4;cursor:not-allowed}
@@ -602,7 +617,7 @@
       <div class="header-avatar" id="header-avatar">😀</div>
       <div class="logo" id="header-name">RPS ARENA</div>
     </div>
-    <button class="fullscreen-btn" id="fullscreen-btn" onclick="toggleFullscreen()" title="Fullscreen">⛶</button>
+    <span class="trade-shortcut" id="trade-shortcut-btn" onclick="showView('trade');renderTrade()" title="Trade">🧮</span>
     <div class="wallet">
       <span class="token-icon">▣</span>
       <span class="wallet-amt" id="balance-display">10</span>
@@ -614,7 +629,6 @@
     <button class="nav-btn" onclick="showView('profile');renderProfile()">Profile</button>
     <button class="nav-btn" onclick="showView('history');renderHistory()">History</button>
     <button class="nav-btn" onclick="showView('shop');renderShop()">Shop</button>
-    <button class="nav-btn" onclick="showView('trade');renderTrade()">Trade</button>
   </div>
 
   <div class="view-wrap">
@@ -808,14 +822,21 @@
       <div class="section-title" style="margin-top:6px">Open a Box</div>
       <div id="loot-boxes" class="loot-boxes"></div>
 
+      <div class="section-title" style="margin-top:10px">This Week's Pool</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:2px">What Classic/Mystery/Lucky/Daily boxes can currently drop — rotates weekly.</div>
+      <div id="box-pool-preview"></div>
+
       <div class="section-title" style="margin-top:10px">Your Collection</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:2px">Manage and equip everything you own from the Profile tab.</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:2px">Manage, equip, and open boxes from the Profile tab.</div>
     </div>
 
     <!-- TRADE -->
     <div class="view" id="view-trade">
-      <div class="section-title">Trade</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:6px;line-height:1.4">Trade one emoji for another with a real online friend. Only works with friends added by Friend Code.</div>
+      <div class="back-bar">
+        <button onclick="showView('lobby')">← Back</button>
+        <div style="font-weight:700">Trade</div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px;line-height:1.4">Trade emojis with a real online friend. Only works with friends added by Friend Code.</div>
 
       <div id="trade-incoming-wrap" style="display:none">
         <div class="section-title">Incoming Offers</div>
@@ -896,7 +917,13 @@
       <div class="section-title" style="margin-top:14px">Secret Challenges</div>
       <div class="secret-challenges" id="secret-challenges"></div>
 
-      <div class="section-title" style="margin-top:6px">Owned Emojis (<span id="ps-collection-count">0</span>)</div>
+      <div class="section-title" style="margin-top:6px">Unopened Boxes</div>
+      <div id="unopened-boxes" class="loot-boxes"></div>
+
+      <div class="section-title" style="margin-top:6px;display:flex;align-items:center;justify-content:space-between">
+        <span>Owned Emojis (<span id="ps-collection-count">0</span>)</span>
+        <button id="collection-sort-btn" onclick="cycleCollectionSort()" style="background:var(--surface2);border:1px solid var(--border);color:var(--gold);border-radius:6px;padding:4px 9px;font-size:10px;font-weight:700;letter-spacing:.03em;cursor:pointer;text-transform:none">Sort: Rarity</button>
+      </div>
       <div id="ps-collection"></div>
       <button id="reset-btn" onclick="confirmReset()" style="margin-top:8px;background:none;border:1px solid var(--danger);color:var(--danger);border-radius:10px;padding:11px;cursor:pointer;font-size:13px;font-weight:600">Reset all progress (one-time)</button>
     </div>
@@ -1085,6 +1112,27 @@
     <div class="modal-btns">
       <button class="btn-cancel" onclick="document.getElementById('name-modal').classList.remove('open')">Cancel</button>
       <button class="btn-confirm" onclick="saveName()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- BOX OPENING ANIMATION (non-dismissable during the 4s reveal) -->
+<div class="modal-overlay" id="box-opening-overlay">
+  <div class="modal">
+    <h3 id="box-opening-title">Opening…</h3>
+    <div id="box-cycle-emoji">🎁</div>
+    <div style="font-size:11px;color:var(--muted)">Rolling…</div>
+  </div>
+</div>
+
+<!-- EMOJI DETAIL INFO CARD (long-press on any owned emoji) -->
+<div class="modal-overlay" id="detail-card-modal">
+  <div class="modal" style="text-align:center">
+    <div id="detail-card-emoji" style="font-size:64px;margin-bottom:6px">😀</div>
+    <h3 id="detail-card-name">Grinning</h3>
+    <div id="detail-card-body" style="font-size:12px;color:var(--muted);line-height:1.8;margin-top:8px;text-align:left"></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeDetailCard()">Close</button>
     </div>
   </div>
 </div>
