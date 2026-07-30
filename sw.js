@@ -1,4 +1,4 @@
-const CACHE = 'rps-arena-v9';
+const CACHE = 'rps-arena-v10';
 const ASSETS = [
   './',
   './index.html',

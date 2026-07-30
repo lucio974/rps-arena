@@ -23,6 +23,7 @@ const mp = {
   friendPresence: {},     // uid -> presence snapshot, kept live for friends list
   _queueListener: null,
   _queueWatchRef: null,
+  _matchmakingPoll: null,
   _matchListener: null,
   _roundListener: null,
   _pendingReveal: null,   // {round, pick, nonce}
@@ -235,52 +236,58 @@ function _watchFriendAdds() {
 /* ---- RANDOM MATCHMAKING ---- */
 function mpFindMatch(onFound, onError) {
   if (!mp.ready) { onError && onError('offline'); return; }
-  const db = firebase.database();
   mpSetStatus('searching');
+  console.log('[multiplayer] searching for a match…');
+  _enqueueSelf(onFound);
+  _tryGrabFromQueue(onFound, onError);
+  // Belt-and-suspenders: also re-check the queue every 2.5s while waiting, independent
+  // of the live listener below. If the realtime listener ever misses an event for any
+  // reason, this guarantees we still find a waiting opponent within a few seconds.
+  mp._matchmakingPoll = setInterval(() => _tryGrabFromQueue(onFound, onError), 2500);
+}
+// One-shot attempt: look for anyone else waiting, and if found, try to claim them via
+// an atomic transaction on THEIR queue node. Firebase transactions on a single node are
+// inherently safe against double-claims — if the transaction doesn't commit with us as
+// the claimant, someone else got there first (or they left), and we just keep waiting.
+function _tryGrabFromQueue(onFound, onError) {
+  if (!mp._queueListener) return; // already matched or search was cancelled
+  const db = firebase.database();
   db.ref('queue').orderByChild('waiting').equalTo(true).limitToFirst(8).once('value', (snap) => {
+    if (!mp._queueListener) return; // resolved while this round-trip was in flight
     let opponent = null;
     snap.forEach((child) => {
       if (child.key !== mp.uid && !opponent) opponent = Object.assign({ uid: child.key }, child.val());
     });
-    if (opponent) {
-      _attemptGrab(opponent, onFound, () => _enqueueSelf(onFound));
-    } else {
-      _enqueueSelf(onFound);
-    }
+    if (!opponent) return;
+    console.log('[multiplayer] candidate opponent found, attempting claim:', opponent.uid);
+    db.ref('queue/' + opponent.uid).transaction((cur) => {
+      if (cur && cur.waiting) {
+        cur.waiting = false;
+        cur.matchedWith = mp.uid;
+        return cur;
+      }
+      return; // abort — someone else grabbed them first, or they left
+    }, (err, committed, snap2) => {
+      if (err) { console.error('[multiplayer] claim transaction failed:', err); return; }
+      if (!mp._queueListener) return; // resolved via the other path while this was in flight
+      if (committed && snap2.val() && snap2.val().matchedWith === mp.uid) {
+        console.log('[multiplayer] claim succeeded — creating match with', opponent.uid);
+        _stopMatchmakingWatchers();
+        if (mp._queueListener) {
+          mp._queueListener.ref.off('value', mp._queueListener.listener);
+          mp._queueListener.ref.remove();
+          mp._queueListener = null;
+        }
+        _createMatch(opponent, onFound);
+      }
+      // else: lost the race for this candidate — the poll/listener will try again.
+    });
   }, (err) => {
     // Most likely cause: Realtime Database security rules haven't been (re)published
     // in the Firebase Console yet — editing the local rules file alone doesn't affect
     // the live project. See FIREBASE_SETUP.md.
     console.error('[multiplayer] queue read failed — check that database.rules.json has been published in the Firebase Console:', err);
     onError && onError('permission');
-  });
-}
-// Tie-breaker so two players who discover each other at almost the same instant don't
-// BOTH successfully "grab" each other and end up creating two separate match documents
-// for the same pairing — only the lexicographically-smaller uid ever initiates a grab.
-// The other side just keeps waiting; it'll be grabbed in turn.
-function _attemptGrab(opponent, onFound, onFail) {
-  if (mp.uid > opponent.uid) { onFail(); return; }
-  const db = firebase.database();
-  db.ref('queue/' + opponent.uid).transaction((cur) => {
-    if (cur && cur.waiting) {
-      cur.waiting = false;
-      cur.matchedWith = mp.uid;
-      return cur;
-    }
-    return; // abort transaction — someone else grabbed them, or they left
-  }, (err, committed, snap2) => {
-    if (!err && committed && snap2.val() && snap2.val().matchedWith === mp.uid) {
-      _stopWatchingQueue();
-      if (mp._queueListener) {
-        mp._queueListener.ref.off('value', mp._queueListener.listener);
-        mp._queueListener.ref.remove();
-        mp._queueListener = null;
-      }
-      _createMatch(opponent, onFound);
-    } else {
-      onFail();
-    }
   });
 }
 function _enqueueSelf(onFound) {
@@ -296,39 +303,39 @@ function _enqueueSelf(onFound) {
     // Wait specifically for matchId — matchedWith (set first, by the transaction) is
     // the OPPONENT's uid, not the match path, and arrives slightly before matchId does.
     if (v && v.waiting === false && v.matchId) {
+      console.log('[multiplayer] got claimed by an opponent — joining match', v.matchId);
       myQ.off('value', listener);
       myQ.remove();
-      _stopWatchingQueue();
+      _stopMatchmakingWatchers();
       mpJoinMatch(v.matchId, 'p2', onFound);
     }
   });
   mp._queueListener = { ref: myQ, listener };
-  // Keep watching for anyone ELSE who starts waiting too — covers the race where two
-  // players tap "Find Match" within the same instant and each one's initial one-shot
-  // query missed the other (neither had enqueued yet when the other's query ran).
-  _watchQueueForOpponent(onFound);
-}
-function _watchQueueForOpponent(onFound) {
-  const db = firebase.database();
-  const ref = db.ref('queue').orderByChild('waiting').equalTo(true);
-  const listener = ref.on('child_added', (snap) => {
+  // Live listener for fast reaction — covers the race where two players tap "Find
+  // Match" within the same instant and each one's initial one-shot query missed the
+  // other (neither had enqueued yet when the other's query ran). The poll above is
+  // the fallback in case this ever misses an event.
+  const watchRef = db.ref('queue').orderByChild('waiting').equalTo(true);
+  const watchListener = watchRef.on('child_added', (snap) => {
     if (snap.key === mp.uid) return;
-    if (!mp._queueListener) return; // already matched/cancelled
-    const opponent = Object.assign({ uid: snap.key }, snap.val());
-    if (!opponent.waiting) return;
-    _attemptGrab(opponent, onFound, () => {});
+    if (!mp._queueListener) return;
+    _tryGrabFromQueue(onFound, () => {});
   });
-  mp._queueWatchRef = { ref, listener };
+  mp._queueWatchRef = { ref: watchRef, listener: watchListener };
 }
-function _stopWatchingQueue() {
+function _stopMatchmakingWatchers() {
   if (mp._queueWatchRef) {
     mp._queueWatchRef.ref.off('child_added', mp._queueWatchRef.listener);
     mp._queueWatchRef = null;
   }
+  if (mp._matchmakingPoll) {
+    clearInterval(mp._matchmakingPoll);
+    mp._matchmakingPoll = null;
+  }
 }
 function mpCancelSearch() {
   if (!mp.ready) return;
-  _stopWatchingQueue();
+  _stopMatchmakingWatchers();
   if (mp._queueListener) {
     mp._queueListener.ref.off('value', mp._queueListener.listener);
     mp._queueListener = null;
@@ -351,6 +358,8 @@ function _createMatch(opponent, onFound) {
     // even if their listener fires slightly out of order.
     db.ref('queue/' + opponent.uid).update({ matchId });
     mpJoinMatch(matchId, 'p1', onFound);
+  }).catch((err) => {
+    console.error('[multiplayer] failed to create match:', err);
   });
 }
 

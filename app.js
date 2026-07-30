@@ -83,6 +83,7 @@ const DEFAULT_STATE = {
   weeklyPoolIds: [],
   emojisTraded: 0, // total items that have changed hands via trade (give + receive both count)
   collectionSortMode: 'rarity', // 'rarity' | 'float' | 'date' — cycled from Profile
+  tournamentHistory: [],
   // Streak run state (persistent for a current run)
   currentStreakBot: null,
 };
@@ -106,13 +107,13 @@ let runtime = {
    rather than neon-bright so they sit comfortably as a UI accent; "Custom" lets
    the user enter any hex. */
 const THEME_PRESETS = [
-  { id: 'amber',      name: 'Amber',       base: '#FFB562', light: '#FFCB91' }, // default
+  { id: 'teal',       name: 'Teal',        base: '#487D8F', light: '#7FA4B1' }, // default
+  { id: 'amber',      name: 'Amber',       base: '#FFB562', light: '#FFCB91' },
   { id: 'crimson',    name: 'Crimson',     base: '#C93F61', light: '#D97990' },
   { id: 'periwinkle', name: 'Periwinkle',  base: '#6E86FF', light: '#9AAAFF' },
   { id: 'citron',     name: 'Citron',      base: '#F0FF80', light: '#F5FFA6' },
   { id: 'peach',      name: 'Peach',       base: '#FFC981', light: '#FFD9A7' },
   { id: 'mauve',      name: 'Mauve',       base: '#BD6699', light: '#D194B8' },
-  { id: 'teal',       name: 'Teal',        base: '#487D8F', light: '#7FA4B1' },
   { id: 'violet',     name: 'Violet',      base: '#6A6699', light: '#9794B8' },
 ];
 
@@ -132,7 +133,7 @@ function _lightenHex(hex, amount) {
 // Convert a #rrggbb hex to an "R,G,B" comma-separated string for use inside rgba().
 function _hexToRgbTriplet(hex) {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex);
-  if (!m) return '255,181,98';
+  if (!m) return '72,125,143';
   const n = parseInt(m[1], 16);
   return ((n >> 16) & 0xff) + ',' + ((n >> 8) & 0xff) + ',' + (n & 0xff);
 }
@@ -173,7 +174,7 @@ function applyTheme() {
   r.setProperty('--win', base);
 }
 function setTheme(themeId) {
-  state.themeColor = themeId === 'amber' ? null : themeId;
+  state.themeColor = themeId === 'teal' ? null : themeId;
   saveState();
   applyTheme();
   renderProfile();
@@ -190,7 +191,7 @@ function setThemeCustom(hex) {
 function renderThemePicker() {
   const grid = document.getElementById('theme-picker');
   if (!grid) return;
-  const current = state.themeColor || 'amber';
+  const current = state.themeColor || 'teal';
   grid.innerHTML = THEME_PRESETS.map(p => {
     const sel = p.id === current ? 'selected' : '';
     return `
@@ -205,7 +206,7 @@ function renderThemePicker() {
     const preset = THEME_PRESETS.find(p => p.id === current);
     if (preset) input.value = preset.base;
     else if (/^#[0-9a-f]{6}$/i.test(current)) input.value = current;
-    else input.value = '#FFB562';
+    else input.value = '#487D8F';
   }
 }
 // Wired from the "Apply Custom" button — reads the color input value
@@ -1487,8 +1488,50 @@ function hostTournamentConfirm() {
   setTimeout(() => showLobbyBracket(t.id), 150);
 }
 
+// Template tournaments (not user-hosted) always stay available to join — once one
+// finishes, refresh it straight back to an open, unjoined slot instead of leaving a
+// stale "DONE" card sitting there with nothing new to play.
+function respawnTemplateTournament(t) {
+  const template = TOURNEY_TEMPLATES.find(tpl => tpl.name === t.name);
+  if (!template) return;
+  t.entry = template.entry;
+  t.prize = template.prize;
+  t.slots = template.slots;
+  t.special = template.special;
+  t.bo = template.bo;
+  t.joined = false;
+  t.bracket = null;
+  t.complete = false;
+  delete t.invitedFriends;
+}
+function showTournamentHistory() {
+  const hist = state.tournamentHistory || [];
+  if (hist.length === 0) {
+    openModal('Tournament History', '<div class="empty-state">No tournaments completed yet.</div>', () => {});
+    return;
+  }
+  const rows = hist.map(h => {
+    const icon = h.won ? '🏆' : '❌';
+    const prizeText = h.special === 'emoji' ? 'Mystery Emoji' : ('▣ ' + h.prize);
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+        <div style="font-size:20px">${icon}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:12px">${h.name}</div>
+          <div style="font-size:10px;color:var(--muted)">${h.won ? 'You won' : 'Champion: ' + (h.champion || 'Unknown')} · ${h.time}</div>
+        </div>
+        <div style="font-size:11px;color:var(--gold);font-weight:700;white-space:nowrap">${prizeText}</div>
+      </div>
+    `;
+  }).join('');
+  openModal('Tournament History', `<div style="max-height:400px;overflow-y:auto">${rows}</div>`, () => {});
+}
+
 function renderTourneyList() {
   initTourneys();
+  (state.tournaments || []).forEach(t => {
+    if (t.complete && !t.hosted) respawnTemplateTournament(t);
+  });
   const el = document.getElementById('tourney-list');
   el.innerHTML = state.tournaments.map(t => {
     const status = t.complete ? '<span style="font-size:10px;background:rgba(136,136,136,.2);color:var(--muted);padding:2px 6px;border-radius:3px">DONE</span>'
@@ -1759,6 +1802,18 @@ function onTourneyMatchContinue(won) {
     t.complete = true;
     if (mp.ready) mpPushProfile();
   }
+  if (t.complete && fin.done) {
+    if (!state.tournamentHistory) state.tournamentHistory = [];
+    state.tournamentHistory.unshift({
+      name: t.name,
+      special: t.special,
+      prize: t.prize,
+      champion: fin.winner || null,
+      won: fin.winner === 'You',
+      time: new Date().toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+    });
+    if (state.tournamentHistory.length > 50) state.tournamentHistory = state.tournamentHistory.slice(0, 50);
+  }
   saveState();
   showLobbyBracket(runtime.activeTourney);
 }
@@ -2013,7 +2068,7 @@ const CHALLENGE_DEFS = [
     emoji: '🧬',
     name: 'Aligned DNA',
     desc: 'Win 100 PvP matches in a row.',
-    rarity: 'legendary',
+    rarity: 'mythical',
     progress: () => [{ current: Math.min(state.bestStreak || 0, 100), goal: 100, label: 'PvP wins in a row' }],
   },
   // 🧇 Finally Served — hidden, 100 shop-tab opens (delayed reveal). Grants emoji + 100 tokens.
@@ -2057,7 +2112,7 @@ const CHALLENGE_DEFS = [
     emoji: '🔖',
     name: '+aura',
     desc: 'Luckiest item in the game, reset and go flex the ladder from start',
-    rarity: 'legendary',
+    rarity: 'mythical',
     hidden: true,
     unlockFlag: () => !!state.brokenFeatureTriggered,
     progress: () => [{ current: state.brokenFeatureTriggered ? 1 : 0, goal: 1, label: state.brokenFeatureTriggered ? 'glitch experienced' : '???' }],
@@ -2156,7 +2211,7 @@ const CHALLENGE_DEFS = [
     emoji: '🩻',
     name: 'See Through',
     desc: 'Win 25 tournaments.',
-    rarity: 'epic',
+    rarity: 'mythical',
     progress: () => [{ current: Math.min(state.tourneysWon || 0, 25), goal: 25, label: 'tournaments won' }],
   },
   {
@@ -2172,7 +2227,7 @@ const CHALLENGE_DEFS = [
     emoji: '🧠',
     name: 'Head Games',
     desc: 'Reach the highest ELO tier (Grandmaster).',
-    rarity: 'legendary',
+    rarity: 'mythical',
     progress: () => {
       const top = ELO_TIERS[ELO_TIERS.length - 1].min; // 2100
       // Live: track CURRENT ELO until challenge is complete. Once claimed (or once
@@ -2188,7 +2243,7 @@ const CHALLENGE_DEFS = [
     emoji: '🪤',
     name: 'Mouse Trap',
     desc: 'Reach 0 ELO.',
-    rarity: 'legendary',
+    rarity: 'mythical',
     progress: () => {
       // Binary: complete the moment current ELO hits 0, OR if it ever did
       // (lowestElo === 0). Bar fills proportionally as ELO drops from 1000 to 0.
@@ -2327,6 +2382,12 @@ function equipEmojiChar(emoji) {
 // Equip a SPECIFIC owned instance (used by the collection grid, where duplicates
 // of the same emoji can have different float values — you're picking one exact copy).
 // Cycles how the "Owned Emojis" grid on Profile is organized: rarity → float → date → rarity.
+// Tapping the big profile avatar jumps straight to the owned-emojis grid below,
+// instead of leaving the page entirely.
+function scrollToOwnedEmojis() {
+  const el = document.getElementById('ps-collection');
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 function cycleCollectionSort() {
   const order = ['rarity', 'float', 'date'];
   const cur = order.indexOf(state.collectionSortMode || 'rarity');
@@ -3577,12 +3638,13 @@ function closeTradeBuilder() {
   tradeState.friendIdx = null;
   tradeState.friendUid = null;
 }
-function _tradeTileHtml(kind, id, emoji, name, sub, selected, onclickFn) {
+function _tradeTileHtml(kind, id, emoji, name, sub, selected, onclickFn, rarity) {
   return `
     <div class="trade-item ${selected ? 'selected' : ''}" onclick="${onclickFn}('${kind}','${id}')">
       <div class="shop-emoji">${emoji}</div>
       <div class="shop-name">${name}</div>
       ${sub ? `<div class="shop-float">${sub}</div>` : ''}
+      ${rarity ? `<div class="shop-action ${rarity}">${rarity.toUpperCase()}</div>` : ''}
     </div>
   `;
 }
@@ -3591,7 +3653,7 @@ function renderTradeMyItems() {
   const emojiTiles = state.ownedEmojis.map(inst => {
     const info = getEmojiInfo(inst.e);
     const sel = _isSelected(tradeState.mySelected, 'emoji', inst.id);
-    return _tradeTileHtml('emoji', inst.id, inst.e, info.name, inst.float.toFixed(3), sel, 'toggleMyTradeItem');
+    return _tradeTileHtml('emoji', inst.id, inst.e, info.name, inst.float.toFixed(3), sel, 'toggleMyTradeItem', info.rarity);
   });
   const boxTiles = (state.unopenedBoxes || []).map(b => {
     const def = getBoxDef(b.boxId);
@@ -3607,7 +3669,7 @@ function renderTradeTheirItems() {
     const item = tradeState.theirCollection[id];
     const info = getEmojiInfo(item.e);
     const sel = _isSelected(tradeState.theirSelected, 'emoji', id);
-    return _tradeTileHtml('emoji', id, item.e, info.name, item.float.toFixed(3), sel, 'toggleTheirTradeItem');
+    return _tradeTileHtml('emoji', id, item.e, info.name, item.float.toFixed(3), sel, 'toggleTheirTradeItem', info.rarity);
   });
   const boxTiles = Object.keys(tradeState.theirBoxes).map(id => {
     const b = tradeState.theirBoxes[id];

@@ -18,10 +18,10 @@
   :root{
     /* Primary brand accent. Default is the original gold; can be overridden by user
        via Profile theme picker (sets inline --gold/--gold-light/--gold-rgb on :root). */
-    --gold:#FFB562;--gold-light:#FFCB91;--gold-rgb:255,181,98;--bg:#0d0d12;--surface:#16161f;
+    --gold:#487D8F;--gold-light:#7FA4B1;--gold-rgb:72,125,143;--bg:#0d0d12;--surface:#16161f;
     --surface2:#1e1e2a;--surface3:#26263a;--border:#2e2e44;
     --text:#e8e8f0;--muted:#888;--accent:#4f8ef7;--danger:#e24b4a;
-    --success:#3b9a5a;--win:#FFB562;--epic:#a96bff;--rare:#4f8ef7;--common:#888;
+    --success:#3b9a5a;--win:#487D8F;--epic:#a96bff;--rare:#4f8ef7;--common:#888;
     --legendary:#ff9b3d;--mythical:#FF3EC9;
     --safe-top:env(safe-area-inset-top,0px);
     --safe-bot:env(safe-area-inset-bottom,0px);
@@ -718,6 +718,7 @@
         <div class="back-bar">
           <button onclick="hideLobbySections()">← Back</button>
           <div style="font-weight:700;flex:1">Open Tournaments</div>
+          <button class="host-tourney-btn" style="background:var(--surface2);border:1px solid var(--border);color:var(--muted)" onclick="showTournamentHistory()">History</button>
           <button class="host-tourney-btn" onclick="openHostTourneyModal()">+ Host</button>
         </div>
         <div class="tourney-list" id="tourney-list"></div>
@@ -874,7 +875,7 @@
     <!-- PROFILE -->
     <div class="view" id="view-profile">
       <div class="profile-hero">
-        <div class="big-avatar" onclick="showView('shop');renderShop()">
+        <div class="big-avatar" onclick="scrollToOwnedEmojis()">
           <span id="profile-avatar">😀</span>
           <div class="edit-pencil">✎</div>
         </div>
@@ -917,7 +918,7 @@
       <div class="theme-picker" id="theme-picker"></div>
       <div class="theme-custom-row">
         <button class="theme-custom-apply" onclick="applyCustomTheme()">Apply Custom</button>
-        <input type="color" class="theme-custom-input" id="theme-custom-input" value="#FFB562">
+        <input type="color" class="theme-custom-input" id="theme-custom-input" value="#487D8F">
       </div>
 
       <div class="section-title" style="margin-top:14px">Secret Challenges</div>
