@@ -5,12 +5,20 @@
 
     "presence": {
       ".read": "auth != null",
+      ".indexOn": ["elo"],
       "$uid": {
         ".write": "auth != null && auth.uid === $uid"
       }
     },
 
     "collections": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+
+    "boxes": {
       ".read": "auth != null",
       "$uid": {
         ".write": "auth != null && auth.uid === $uid"

@@ -316,7 +316,7 @@
   .buy-btn{background:var(--surface2);border:1px solid var(--gold);color:var(--gold);
     border-radius:8px;padding:6px 10px;font-size:14px;font-weight:700;cursor:pointer;-webkit-user-select:none;line-height:1}
   .buy-btn:active{background:var(--gold);color:#000}
-  .trade-shortcut{font-size:22px;cursor:pointer;flex-shrink:0;-webkit-user-select:none;
+  .trade-shortcut{font-size:18px;cursor:pointer;flex-shrink:0;-webkit-user-select:none;
     display:flex;align-items:center;justify-content:center;padding:4px;line-height:1}
   .trade-shortcut:active{transform:scale(.88)}
 
@@ -436,7 +436,8 @@
 
   /* LOOT BOXES */
   .loot-boxes{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
-  .lootbox-card{background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:14px 8px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px}
+  .lootbox-card{background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:14px 8px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer}
+  .lootbox-card:active{transform:scale(.97)}
   .lootbox-icon{font-size:36px;line-height:1}
   .lootbox-name{font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:.04em;font-weight:700;margin-top:2px}
   .lootbox-odds{display:flex;flex-direction:column;gap:2px;margin:4px 0}
@@ -807,9 +808,9 @@
         <button class="daily-claim-btn" id="daily-claim-btn" onclick="claimDailyTokens()">CLAIM</button>
       </div>
 
-      <div class="shop-featured" id="shop-featured">
+      <div class="shop-featured" id="shop-featured" onclick="cycleFeaturedPreview()" style="cursor:pointer">
         <div class="shop-featured-header">
-          <div class="shop-featured-title">⭐ DAILY BOX PREVIEW <span class="shop-featured-cycle">rotates hourly</span></div>
+          <div class="shop-featured-title">⭐ DAILY BOX PREVIEW <span class="shop-featured-cycle">tap to shuffle · rotates hourly</span></div>
           <div class="shop-featured-sub">A peek at what today's pool could hand you</div>
         </div>
         <div class="shop-featured-grid" id="shop-featured-grid"></div>
@@ -841,6 +842,11 @@
       <div id="trade-incoming-wrap" style="display:none">
         <div class="section-title">Incoming Offers</div>
         <div id="trade-incoming-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
+      </div>
+
+      <div id="trade-outgoing-wrap" style="display:none">
+        <div class="section-title">Active Trades (Sent)</div>
+        <div id="trade-outgoing-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
       </div>
 
       <div class="section-title">Pick a Friend</div>

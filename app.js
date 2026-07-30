@@ -81,6 +81,7 @@ const DEFAULT_STATE = {
   lastDailyBoxClaim: null,
   weeklyPoolBucket: null,
   weeklyPoolIds: [],
+  emojisTraded: 0, // total items that have changed hands via trade (give + receive both count)
   collectionSortMode: 'rarity', // 'rarity' | 'float' | 'date' — cycled from Profile
   // Streak run state (persistent for a current run)
   currentStreakBot: null,
@@ -620,7 +621,7 @@ function startFindMatch() {
         startFindMatchLocal(tier);
         return;
       }
-      runtime.online = { matchId: info.matchId, role: info.role, round: 1 };
+      runtime.online = { matchId: info.matchId, role: info.role, round: 1, oppUid: info.opponent.uid };
       startGame('pvp', tier.entry, tier.prize, info.opponent.username || 'Player', info.opponent.avatar || '🤖', info.bo || 5, info.opponent.elo || 1000);
     }, (reason) => {
       if (runtime.online) clearTimeout(runtime.online.timeoutId);
@@ -669,7 +670,7 @@ function cancelSearch() {
 
 function startGame(mode, entry, prize, oppN, oppAvatar='🤖', bo=3, oppElo=1000) {
   runtime.currentMode = mode;
-  runtime.gameState = { entry, prize, opp: oppN, oppAvatar, scoreYou: 0, scoreOpp: 0, round: 1, bo, done: false, oppElo, youPicks: [], oppPicks: [], outcomes: [] };
+  runtime.gameState = { entry, prize, opp: oppN, oppAvatar, scoreYou: 0, scoreOpp: 0, round: 1, bo, done: false, oppElo, oppUid: runtime.online ? runtime.online.oppUid : null, youPicks: [], oppPicks: [], outcomes: [] };
   // Clear pick-history widget
   const ph = document.getElementById('pick-history');
   if (ph) ph.innerHTML = '';
@@ -934,13 +935,17 @@ function endGame(g) {
   // games-played side effects. Just show a result popup and bounce back.
   if (runtime.currentMode === 'friend') {
     let type, title, detail;
-    if (won)        { type = 'win';  title = 'YOU WIN!'; detail = 'Friendly match — no rewards.'; }
+    if (won)        { type = 'win';  title = 'YOU WIN!'; detail = 'Friendly match — no tokens or ELO, but boxes can still drop.'; }
     else if (draw)  { type = 'draw'; title = 'DRAW';     detail = 'Friendly match — no rewards.'; }
     else            { type = 'lose'; title = 'DEFEATED'; detail = 'Friendly match — no rewards.'; }
-    if (won && navigator.vibrate) navigator.vibrate([20, 40, 20]);
+    if (won) {
+      if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
+      rollWinBoxDrops(0.5);
+      if (mp.ready) mpPushBoxes();
+    }
     // Still logged to match history (just no token/ELO/win-loss stat impact).
     state.history.unshift({
-      opp: g.opp, oppAvatar: g.oppAvatar,
+      opp: g.opp, oppAvatar: g.oppAvatar, oppUid: g.oppUid || null,
       result: won ? 'W' : draw ? 'D' : 'L',
       score: g.scoreYou + '-' + g.scoreOpp,
       eloDelta: 0, mode: 'Friend',
@@ -1004,6 +1009,10 @@ function endGame(g) {
         setTimeout(() => toast('🛸 Hidden challenge unlocked: Lightyears Ahead!', { reward: true }), 1200);
       }
 
+      // ── Box drops (independent rolls — a lucky win can drop more than one) ──
+      rollWinBoxDrops(1);
+      if (mp.ready) mpPushBoxes();
+
       // ── 1% chance: random emoji you don't yet own ──
       // Uniform sample across full shop pool; skip silently if you own everything.
       if (Math.random() < 0.01) {
@@ -1054,7 +1063,7 @@ function endGame(g) {
     }
 
     state.history.unshift({
-      opp: g.opp, oppAvatar: g.oppAvatar,
+      opp: g.opp, oppAvatar: g.oppAvatar, oppUid: g.oppUid || null,
       result: won ? 'W' : draw ? 'D' : 'L',
       score: g.scoreYou + '-' + g.scoreOpp,
       eloDelta, mode: runtime.online ? 'PvP Online' : 'PvP',
@@ -1064,13 +1073,15 @@ function endGame(g) {
     });
     if (state.history.length > 100) state.history = state.history.slice(0, 100);
 
-    // Clean up the real-time match: push our updated ELO/avatar to presence and
-    // tear down listeners now that the match is fully resolved.
+    // Clean up the real-time match if this one was played online.
     if (runtime.online) {
       mpLeaveMatch(false);
-      if (mp.ready) mpPushProfile();
       runtime.online = null;
     }
+    // Push updated ELO/wins/stats to Firebase regardless of whether THIS match was
+    // played online — your real presence/leaderboard/friend-visible stats should
+    // always reflect your true current numbers whenever you're connected.
+    if (mp.ready) mpPushProfile();
 
     updateBalance();
     saveState();
@@ -1228,6 +1239,7 @@ function handleStreakEnd(won, draw) {
   }
   saveState();
   updateHeader();
+  if (mp.ready) mpPushProfile();
 }
 
 function continueStreak() { startStreakMatch(); }
@@ -1255,7 +1267,7 @@ function leaveGame() {
     if (state.elo < (state.lowestElo === undefined ? state.elo : state.lowestElo)) state.lowestElo = state.elo;
 
     state.history.unshift({
-      opp: g.opp, oppAvatar: g.oppAvatar,
+      opp: g.opp, oppAvatar: g.oppAvatar, oppUid: g.oppUid || null,
       result: 'L',
       score: 'Forfeit',
       eloDelta, mode: runtime.online ? 'PvP Online' : 'PvP',
@@ -1268,9 +1280,9 @@ function leaveGame() {
     // Notify the opponent (if any) that we forfeited, and tear down listeners.
     if (runtime.online) {
       mpLeaveMatch(true);
-      if (mp.ready) mpPushProfile();
       runtime.online = null;
     }
+    if (mp.ready) mpPushProfile();
 
     saveState();
     updateBalance();
@@ -1745,6 +1757,7 @@ function onTourneyMatchContinue(won) {
     state.tourneysWon = (state.tourneysWon || 0) + 1;
     updateBalance();
     t.complete = true;
+    if (mp.ready) mpPushProfile();
   }
   saveState();
   showLobbyBracket(runtime.activeTourney);
@@ -1945,6 +1958,7 @@ function executeReset() {
   renderHistory();
   initTourneys();
   refreshFeatured();
+  if (mp.ready) mpPushProfile();
   toast('Progress reset (emojis kept)');
   showView('lobby');
 }
@@ -1968,6 +1982,16 @@ function renderFeatured() {
     if (!item) return '';
     return previewItemHtml(item);
   }).join('');
+}
+// Tap the daily box preview to see another random sample right now — purely a manual
+// "shuffle", doesn't affect the hourly auto-rotation or what boxes can actually award.
+function cycleFeaturedPreview() {
+  const pool = getShopPool();
+  if (!pool.length) return;
+  state.featuredEmojis = _randomSample(pool, 4).map(e => e.e);
+  saveState();
+  renderFeatured();
+  if (navigator.vibrate) navigator.vibrate(8);
 }
 function previewItemHtml(item) {
   return `
@@ -2139,14 +2163,9 @@ const CHALLENGE_DEFS = [
     id: 'collector_10',
     emoji: '🪕',
     name: 'Collector',
-    desc: 'Collect 25 emojis.',
+    desc: 'Trade 25 emojis.',
     rarity: 'rare',
-    progress: () => {
-      // Count owned emojis excluding the starter 😀. So a fresh user with just the starter
-      // is at 0/25; collecting 25 more (any source: box, challenge, reward) completes it.
-      const collected = state.ownedEmojis.filter(i => i.e !== '😀').length;
-      return [{ current: Math.min(collected, 25), goal: 25, label: 'emojis collected' }];
-    },
+    progress: () => [{ current: Math.min(state.emojisTraded || 0, 25), goal: 25, label: 'emojis traded' }],
   },
   {
     id: 'top_tier',
@@ -2390,7 +2409,7 @@ function equipInstanceUI(id) {
    then a random emoji within that rarity from the current WEEKLY rotating pool. */
 const LOOT_BOXES = [
   { id: 'classic', name: 'Classic Box', price: 10, icon: '📦', weights: { common: 70, rare: 25, epic: 4.5, legendary: 0.5 } },
-  { id: 'mystery', name: 'Mystery Box', price: 30, icon: '📇', weights: { common: 30, rare: 45, epic: 22, legendary: 3 } },
+  { id: 'mystery', name: 'Mystery Box', price: 30, icon: '🗃️', weights: { common: 30, rare: 45, epic: 22, legendary: 3 } },
   { id: 'lucky',   name: 'Lucky Box',   price: 75, icon: '🪩', weights: { common: 5, rare: 25, epic: 45, legendary: 25 } },
   { id: 'daily',   name: 'Daily Box',   price: 5,  icon: '📨', weights: { common: 85, rare: 14, epic: 1, legendary: 0 }, dailyOnly: true },
 ];
@@ -2398,13 +2417,34 @@ const LOOT_BOXES = [
 // the shop for a random 4-hour window each day. 10% chance of a genuine Mythical hit;
 // the other 90% falls back to a legendary-weighted consolation pull from this week's pool.
 const LIMITED_BOX = {
-  id: 'limited', name: 'Limited Box', price: 150, icon: '🏺',
+  id: 'limited', name: 'Limited Box', price: 150, icon: '📇',
   pool: ['🧩','🖼️','✉️','📞','🪨','📸','🪷','🍰','🎞️','🌙','🥶','📇'],
   mythicalChance: 0.1,
 };
 function getBoxDef(boxId) {
   if (boxId === 'limited') return LIMITED_BOX;
   return LOOT_BOXES.find(b => b.id === boxId);
+}
+// Independent-roll box drops after a match win. `mult` scales the base PvP rates
+// (7%/5%/1%/0.5% for classic/mystery/lucky/limited) — e.g. 0.5 for friendlies.
+function rollWinBoxDrops(mult) {
+  const chances = [
+    { boxId: 'classic', chance: 0.07 * mult },
+    { boxId: 'mystery', chance: 0.05 * mult },
+    { boxId: 'lucky',   chance: 0.01 * mult },
+    { boxId: 'limited', chance: 0.005 * mult },
+  ];
+  let delay = 1350;
+  chances.forEach(({ boxId, chance }) => {
+    if (Math.random() < chance) {
+      const def = getBoxDef(boxId);
+      if (!def) return;
+      state.unopenedBoxes.push({ id: _genId(), boxId, ts: Date.now(), source: 'win' });
+      const thisDelay = delay;
+      delay += 200;
+      setTimeout(() => toast(def.icon + ' ' + def.name + ' dropped! Open it from Profile.', { reward: true }), thisDelay);
+    }
+  });
 }
 // Mythical emojis are exclusive to the Limited Box — always resolve to the Mythical
 // tier and are excluded from every other pool (standard boxes, weekly rotation, etc.)
@@ -2482,6 +2522,16 @@ function rollBoxContents(box) {
 }
 
 /* ---- SHOP RENDER: box tiles + bottom pool preview ---- */
+// Fisher-Yates sample — used to vary preview grids on every call instead of always
+// showing the same first N items.
+function _randomSample(arr, n) {
+  const copy = arr.slice();
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = copy[i]; copy[i] = copy[j]; copy[j] = tmp;
+  }
+  return copy.slice(0, n);
+}
 function renderLootBoxes() {
   const el = document.getElementById('loot-boxes');
   if (!el) return;
@@ -2489,9 +2539,9 @@ function renderLootBoxes() {
   let html = LOOT_BOXES.map((box) => {
     const locked = box.dailyOnly && dailyClaimedToday;
     const disabled = locked || state.balance < box.price;
-    const btnLabel = locked ? 'Claimed Today' : 'Preview · ▣ ' + box.price;
+    const buyLabel = locked ? 'Claimed Today' : 'Buy · ▣ ' + box.price;
     return `
-      <div class="lootbox-card">
+      <div class="lootbox-card" onclick="previewLootBox('${box.id}')">
         <div class="lootbox-icon">${box.icon}</div>
         <div class="lootbox-name">${box.name}</div>
         <div class="lootbox-odds">
@@ -2499,20 +2549,20 @@ function renderLootBoxes() {
           <span class="lootbox-odd epic">${box.weights.epic}% Epic</span>
           <span class="lootbox-odd rare">${box.weights.rare}% Rare</span>
         </div>
-        <button class="lootbox-open-btn" onclick="previewLootBox('${box.id}')" ${disabled ? 'disabled' : ''}>${btnLabel}</button>
+        <button class="lootbox-open-btn" onclick="event.stopPropagation();buyLootBox('${box.id}')" ${disabled ? 'disabled' : ''}>${buyLabel}</button>
       </div>
     `;
   }).join('');
   if (isLimitedBoxAvailableNow()) {
     html += `
-      <div class="lootbox-card" style="border-color:var(--mythical)">
+      <div class="lootbox-card" style="border-color:var(--mythical)" onclick="previewLootBox('limited')">
         <div class="lootbox-icon">${LIMITED_BOX.icon}</div>
         <div class="lootbox-name">${LIMITED_BOX.name}</div>
         <div class="lootbox-odds">
           <span class="lootbox-odd mythical">10% MYTHICAL</span>
           <span class="lootbox-odd legendary">90% Legendary</span>
         </div>
-        <button class="lootbox-open-btn" onclick="previewLootBox('limited')" ${state.balance < LIMITED_BOX.price ? 'disabled' : ''}>Preview · ▣ ${LIMITED_BOX.price}</button>
+        <button class="lootbox-open-btn" onclick="event.stopPropagation();buyLootBox('limited')" ${state.balance < LIMITED_BOX.price ? 'disabled' : ''}>Buy · ▣ ${LIMITED_BOX.price}</button>
       </div>
     `;
   }
@@ -2524,17 +2574,18 @@ function renderBoxPoolPreview() {
   if (!el) return;
   const weekly = getWeeklyPool().map((e) => getEmojiInfo(e));
   const order = ['legendary', 'epic', 'rare', 'common'];
+  const sampleCounts = { legendary: 4, epic: 8, rare: 12, common: 16 };
   const byR = { legendary: [], epic: [], rare: [], common: [] };
   weekly.forEach((item) => { (byR[item.rarity] || byR.common).push(item); });
   el.innerHTML = order.filter((r) => byR[r].length).map((r) => `
     <div class="shop-rarity-section">
       <div class="shop-rarity-header ${r}">${r.toUpperCase()} <span class="count">· ${byR[r].length} in this week's pool</span></div>
-      <div class="shop-grid">${byR[r].slice(0, 8).map(previewItemHtml).join('')}</div>
+      <div class="shop-grid">${_randomSample(byR[r], sampleCounts[r]).map(previewItemHtml).join('')}</div>
     </div>
   `).join('');
 }
 
-/* ---- BUY (preview → confirm → inventory) ---- */
+/* ---- BUY (preview → confirm → inventory) — or skip straight to Buy from the card ---- */
 function previewLootBox(boxId) {
   const box = getBoxDef(boxId);
   if (!box) return;
@@ -2548,8 +2599,8 @@ function previewLootBox(boxId) {
         <span style="color:var(--rare)">${box.weights.rare}% Rare</span> ·
         <span style="color:var(--common)">${box.weights.common}% Common</span>
       </div>`;
-  const samplePool = box.id === 'limited' ? box.pool.map((e) => getEmojiInfo(e)) : getWeeklyPool().map((e) => getEmojiInfo(e));
-  const sampleHtml = `<div class="shop-grid" style="margin-top:8px">${samplePool.slice(0, 8).map(previewItemHtml).join('')}</div>`;
+  const fullPool = box.id === 'limited' ? box.pool.map((e) => getEmojiInfo(e)) : getWeeklyPool().map((e) => getEmojiInfo(e));
+  const sampleHtml = `<div class="shop-grid" style="margin-top:8px">${_randomSample(fullPool, 8).map(previewItemHtml).join('')}</div>`;
   openModal(box.icon + ' ' + box.name, `
     <div style="font-size:48px;text-align:center;margin:6px 0">${box.icon}</div>
     ${oddsHtml}
@@ -2571,11 +2622,12 @@ function buyLootBox(boxId) {
   updateBalance();
   updateHeader();
   renderShop();
+  if (mp.ready) mpPushBoxes();
   toast(box.icon + ' ' + box.name + ' added to your inventory — open it from Profile!');
   document.getElementById('modal-confirm-btn').textContent = 'Confirm';
 }
 
-/* ---- OPEN (from Profile inventory): 4s cycling animation, then reveal ---- */
+/* ---- INSPECT + OPEN (from Profile inventory): preview first, then 4s cycling reveal ---- */
 function renderUnopenedBoxes() {
   const el = document.getElementById('unopened-boxes');
   if (!el) return;
@@ -2587,13 +2639,38 @@ function renderUnopenedBoxes() {
     const def = getBoxDef(b.boxId);
     if (!def) return '';
     return `
-      <div class="lootbox-card" style="padding:12px 4px">
+      <div class="lootbox-card" style="padding:12px 4px" onclick="inspectUnopenedBox('${b.id}')">
         <div class="lootbox-icon" style="font-size:30px">${def.icon}</div>
         <div class="lootbox-name" style="font-size:12px">${def.name}</div>
-        <button class="lootbox-open-btn" onclick="openBoxInstance('${b.id}')">Open</button>
+        <button class="lootbox-open-btn" onclick="event.stopPropagation();inspectUnopenedBox('${b.id}')">Inspect</button>
       </div>
     `;
   }).join('');
+}
+// Tap any unopened box to inspect it (odds, pool sample, its unique id) before opening.
+function inspectUnopenedBox(instId) {
+  const boxRec = (state.unopenedBoxes || []).find((b) => b.id === instId);
+  if (!boxRec) return;
+  const box = getBoxDef(boxRec.boxId);
+  if (!box) return;
+  const oddsHtml = box.id === 'limited'
+    ? `<div style="text-align:center;font-size:12px;margin:8px 0"><span style="color:var(--mythical);font-weight:700">10% MYTHICAL</span> · 90% consolation legendary pull</div>`
+    : `<div style="text-align:center;font-size:12px;margin:8px 0">
+        ${box.weights.legendary > 0 ? `<span style="color:var(--legendary)">${box.weights.legendary}% Legendary</span> · ` : ''}
+        <span style="color:var(--epic)">${box.weights.epic}% Epic</span> ·
+        <span style="color:var(--rare)">${box.weights.rare}% Rare</span> ·
+        <span style="color:var(--common)">${box.weights.common}% Common</span>
+      </div>`;
+  const fullPool = box.id === 'limited' ? box.pool.map((e) => getEmojiInfo(e)) : getWeeklyPool().map((e) => getEmojiInfo(e));
+  const sampleHtml = `<div class="shop-grid" style="margin-top:8px">${_randomSample(fullPool, 8).map(previewItemHtml).join('')}</div>`;
+  openModal(box.icon + ' ' + box.name, `
+    <div style="font-size:48px;text-align:center;margin:6px 0">${box.icon}</div>
+    ${oddsHtml}
+    <div style="font-size:9px;color:var(--muted);text-align:center;margin-bottom:6px">Box ID: ${boxRec.id} · from ${boxRec.source || 'unknown'}</div>
+    <div style="font-size:10px;color:var(--muted);text-align:center">Sample of what's in the pool right now:</div>
+    ${sampleHtml}
+  `, () => openBoxInstance(instId));
+  document.getElementById('modal-confirm-btn').textContent = 'Open Now';
 }
 function openBoxInstance(instId) {
   const idx = state.unopenedBoxes.findIndex((b) => b.id === instId);
@@ -2604,8 +2681,9 @@ function openBoxInstance(instId) {
   state.unopenedBoxes.splice(idx, 1);
   saveState();
   renderUnopenedBoxes();
+  if (mp.ready) mpPushBoxes();
   showBoxOpeningAnimation(box, (chosen, floatVal) => {
-    const inst = addEmojiInstance(chosen.e, { source: 'box', float: floatVal });
+    const inst = addEmojiInstance(chosen.e, { source: box.id + '-box', float: floatVal });
     saveState();
     updateHeader();
     if (mp.ready) mpPushProfile();
@@ -2841,6 +2919,16 @@ function renderTiers() {
    ELOs, then inserts the user. Order changes once a day; tapping a row opens
    the same player profile window used elsewhere. */
 function renderLeaderboard() {
+  _renderLeaderboardSynthetic(); // instant paint so the view never looks empty
+  if (mp.ready) {
+    mpFetchTopPlayers(20, (players) => {
+      if (!document.getElementById('view-leaderboard').classList.contains('active')) return;
+      if (!players || players.length === 0) return; // nobody else online yet — keep the synthetic board
+      _renderLeaderboardReal(players);
+    });
+  }
+}
+function _renderLeaderboardSynthetic() {
   // Pool of 14 NPCs, deterministically picked + ranked per day.
   const pool = [...PVP_NAMES, ...BOT_NAMES];
   const seedBase = _hashStr('lb|' + todayKey());
@@ -2873,18 +2961,27 @@ function renderLeaderboard() {
   // Insert the user
   const me = { name: state.username, avatar: state.avatar, elo: state.elo, isYou: true };
   const all = npcs.concat([me]);
-  // Sort by ELO descending
   all.sort((a, b) => b.elo - a.elo);
-
-  // Find user's rank
+  _paintLeaderboard(all, false);
+}
+// Real online players, ranked by ELO (fetched via mpFetchTopPlayers). Replaces the
+// synthetic board once it loads, if anyone else is actually online.
+function _renderLeaderboardReal(players) {
+  let all = players.map(p => ({ name: p.username, avatar: p.avatar || '🤖', elo: p.elo || 1000, isYou: p.uid === mp.uid, uid: p.uid }));
+  const meIdx = all.findIndex(p => p.isYou);
+  const myRow = { name: state.username, avatar: state.avatar, elo: state.elo, isYou: true, uid: mp.uid };
+  if (meIdx >= 0) all[meIdx] = myRow;      // prefer our own live local stats over slightly-stale presence
+  else all.push(myRow);
+  all.sort((a, b) => b.elo - a.elo);
+  _paintLeaderboard(all, true);
+}
+function _paintLeaderboard(all, isReal) {
   const myRank = all.findIndex(x => x.isYou) + 1;
   const total = all.length;
-
-  // Header card
-  const tier = getTier(state.elo);
+  const headerTier = getTier(state.elo);
   document.getElementById('lb-header').innerHTML = `
-    <div class="lb-header-rank" style="color:${tier.color}">#${myRank} <span style="color:var(--muted);font-size:18px">/ ${total}</span></div>
-    <div class="lb-header-label">Your Rank · ${state.elo} ELO</div>
+    <div class="lb-header-rank" style="color:${headerTier.color}">#${myRank} <span style="color:var(--muted);font-size:18px">/ ${total}</span></div>
+    <div class="lb-header-label">Your Rank · ${state.elo} ELO${isReal ? ' · Real Players' : ''}</div>
   `;
 
   // Rows
@@ -2893,10 +2990,12 @@ function renderLeaderboard() {
     const tier = getTier(p.elo);
     const rankCls = rank === 1 ? 'r1' : rank === 2 ? 'r2' : rank === 3 ? 'r3' : '';
     const youCls = p.isYou ? ' you' : '';
-    // For NPCs the row opens the player profile window; for "you" it opens your own profile.
-    const onclick = p.isYou
-      ? `showView('profile');renderProfile()`
-      : `openTourneyPlayerProfile('${String(p.name).replace(/'/g, "\\'")}')`;
+    const safeName = String(p.name).replace(/'/g, "\\'");
+    // For NPCs / real players the row opens the player profile window; for "you" it opens your own profile.
+    let onclick;
+    if (p.isYou) onclick = `showView('profile');renderProfile()`;
+    else if (isReal && p.uid) onclick = `showHistoryPlayerModal('${safeName}','${p.avatar}','${p.uid}')`;
+    else onclick = `openTourneyPlayerProfile('${safeName}')`;
     return `
       <div class="lb-row${youCls}" onclick="${onclick}">
         <div class="lb-rank ${rankCls}">${rank}</div>
@@ -3053,7 +3152,7 @@ function removeFriend(idx) {
 let _historyPlayerCtx = null; // { name, avatar }
 
 // Underlying renderer used by both history-row taps and tournament-name taps.
-function showHistoryPlayerModal(name, avatar) {
+function showHistoryPlayerModal(name, avatar, uid) {
   _historyPlayerCtx = { name, avatar };
   const synth = getPlayerSyntheticProfile(name, avatar);
   const tier = getTier(synth.elo);
@@ -3091,12 +3190,35 @@ function showHistoryPlayerModal(name, avatar) {
   }
 
   document.getElementById('history-player-modal').classList.add('open');
+
+  // If this was a real online opponent, replace the synthetic numbers above with
+  // their real presence stats once they load.
+  if (uid && mp.ready) {
+    mpLookupPlayer(uid, (real) => {
+      if (!real || !document.getElementById('history-player-modal').classList.contains('open')) return;
+      const realTier = getTier(real.elo || 1000);
+      document.getElementById('hpm-avatar').textContent = real.avatar || avatar || '🤖';
+      document.getElementById('hpm-name').textContent = real.username || name;
+      const tEl = document.getElementById('hpm-tier');
+      tEl.textContent = `${realTier.name} · ${real.elo || 1000} ELO · Real Player`;
+      tEl.style.color = realTier.color;
+      const realWr = real.games > 0 ? Math.round((real.wins || 0) / real.games * 100) : 0;
+      document.getElementById('hpm-stats').innerHTML = `
+        <div class="pstat"><div class="pstat-label">Total Wins</div><div class="pstat-val">${real.wins || 0}</div></div>
+        <div class="pstat"><div class="pstat-label">Win Rate</div><div class="pstat-val">${realWr}%</div></div>
+        <div class="pstat"><div class="pstat-label">Selected Emoji</div><div class="pstat-val" style="${real.eqRarity ? 'color:var(--' + real.eqRarity + ')' : ''}">${real.eqFloat !== undefined && real.eqFloat !== null ? real.eqFloat.toFixed(3) : '—'}</div></div>
+        <div class="pstat"><div class="pstat-label">Best PvP Streak</div><div class="pstat-val">${real.bestStreak || 0}</div></div>
+        <div class="pstat"><div class="pstat-label">Tourneys Won</div><div class="pstat-val">${real.tourneysWon || 0}</div></div>
+        <div class="pstat"><div class="pstat-label">Total Games</div><div class="pstat-val">${real.games || 0}</div></div>
+      `;
+    });
+  }
 }
 
 function openPlayerProfile(historyIdx) {
   const h = state.history[historyIdx];
   if (!h) return;
-  showHistoryPlayerModal(h.opp, h.oppAvatar || '🤖');
+  showHistoryPlayerModal(h.opp, h.oppAvatar || '🤖', h.oppUid);
   // Append last-match line (history-specific context)
   document.getElementById('hpm-last').innerHTML =
     `<strong style="color:var(--text)">Last:</strong> ${h.mode} · ${h.score} · ${h.time}`;
@@ -3262,13 +3384,11 @@ function renderOwnedCollectionHtml(items, opts) {
       const actionLabel = equipped ? 'EQUIPPED' : item.rarity.toUpperCase();
       const actionCls = equipped ? 'equipped' : item.rarity;
       const itemCls = 'shop-item long-pressable' + (equipped ? ' equipped' : '');
-      const fromTag = inst.fromCode ? `<div class="shop-from" title="Traded from ${inst.fromCode}">↔ traded</div>` : '';
       return `
         <div class="${itemCls}" data-instance-id="${inst.id}" onclick="equipInstanceUI('${inst.id}')">
           <div class="shop-emoji">${item.e}</div>
           <div class="shop-name">${item.name}</div>
           <div class="shop-float">${inst.float.toFixed(3)}</div>
-          ${fromTag}
           <div class="shop-action ${actionCls}">${actionLabel}</div>
         </div>
       `;
@@ -3334,12 +3454,31 @@ function renderOwnedCollectionHtml(items, opts) {
 let tradeState = {
   friendIdx: null,
   friendUid: null,
-  theirCollection: {},      // {instanceId: {e, float, source}}
+  theirCollection: {},      // emoji instances: {instanceId: {e, float, source}}
+  theirBoxes: {},            // unopened boxes: {boxInstId: {boxId, ts}}
   theirCollectionRef: null,
-  myItemId: null,
-  theirItemId: null,
-  incoming: [],              // pending incoming offers: {id, fromUid, fromName, fromAvatar, offer, request}
+  theirBoxesRef: null,
+  mySelected: [],             // [{type:'emoji'|'box', id}]
+  theirSelected: [],           // [{type:'emoji'|'box', id}]
+  incoming: [],                 // pending incoming offers: {id, fromUid, fromName, fromAvatar, offer:[], request:[]}
+  outgoing: [],                  // offers WE'VE sent that are still pending: {friendUid, friendName, offer:[], request:[], cancel()}
 };
+
+function _tradeItemLabel(item) {
+  if (item.type === 'box') {
+    const def = getBoxDef(item.boxId);
+    return def ? def.icon : '📦';
+  }
+  return item.e;
+}
+function _isSelected(arr, type, id) {
+  return arr.some(x => x.type === type && x.id === id);
+}
+function _toggleSelected(arr, type, id) {
+  const idx = arr.findIndex(x => x.type === type && x.id === id);
+  if (idx >= 0) arr.splice(idx, 1);
+  else arr.push({ type, id });
+}
 
 function renderTrade() {
   const wrap = document.getElementById('trade-incoming-wrap');
@@ -3350,11 +3489,10 @@ function renderTrade() {
       <div class="trade-incoming-card">
         <div style="font-size:12px;font-weight:700">${t.fromName} wants to trade</div>
         <div class="trade-incoming-swap">
-          <span title="They give you">${t.offer.e}</span>
+          <span title="They give you">${t.offer.map(_tradeItemLabel).join(' ')}</span>
           <span style="font-size:16px;color:var(--muted)">→</span>
-          <span title="They want your">${t.request.e}</span>
+          <span title="They want your">${t.request.map(_tradeItemLabel).join(' ')}</span>
         </div>
-        <div style="font-size:10px;color:var(--muted);text-align:center">Their ${floatLabel(t.offer.float)} (${t.offer.float.toFixed(3)}) for your ${floatLabel(t.request.float)} (${t.request.float.toFixed(3)})</div>
         <div class="trade-incoming-btns">
           <button class="btn-cancel" onclick="declineTradeOffer('${t.id}')">Decline</button>
           <button class="btn-confirm" onclick="acceptTradeOffer('${t.id}')">Accept</button>
@@ -3363,6 +3501,25 @@ function renderTrade() {
     `).join('');
   } else {
     wrap.style.display = 'none';
+  }
+
+  const outWrap = document.getElementById('trade-outgoing-wrap');
+  const outList = document.getElementById('trade-outgoing-list');
+  if (tradeState.outgoing.length > 0) {
+    outWrap.style.display = 'block';
+    outList.innerHTML = tradeState.outgoing.map((t, i) => `
+      <div class="trade-incoming-card">
+        <div style="font-size:12px;font-weight:700">Waiting on ${t.friendName}…</div>
+        <div class="trade-incoming-swap">
+          <span title="You give">${t.offer.map(_tradeItemLabel).join(' ')}</span>
+          <span style="font-size:16px;color:var(--muted)">→</span>
+          <span title="You get">${t.request.map(_tradeItemLabel).join(' ')}</span>
+        </div>
+        <button class="btn-cancel" style="width:100%" onclick="cancelOutgoingTrade(${i})">Cancel Offer</button>
+      </div>
+    `).join('');
+  } else {
+    outWrap.style.display = 'none';
   }
 
   const flist = document.getElementById('trade-friend-list');
@@ -3392,16 +3549,23 @@ function openTradeWithFriend(idx) {
   if (!f || !f.uid) { toast('Only real online friends can trade'); return; }
   tradeState.friendIdx = idx;
   tradeState.friendUid = f.uid;
-  tradeState.myItemId = null;
-  tradeState.theirItemId = null;
+  tradeState.mySelected = [];
+  tradeState.theirSelected = [];
   document.getElementById('trade-builder-title').textContent = 'Trade with ' + f.name;
   document.getElementById('trade-builder').style.display = 'block';
   showView('trade');
   renderTradeMyItems();
   document.getElementById('trade-their-items').innerHTML = '<div class="empty-state">Loading…</div>';
   if (tradeState.theirCollectionRef) tradeState.theirCollectionRef.off('value');
+  if (tradeState.theirBoxesRef) tradeState.theirBoxesRef.off('value');
+  tradeState.theirCollection = {};
+  tradeState.theirBoxes = {};
   tradeState.theirCollectionRef = mpWatchCollection(f.uid, (compact) => {
     tradeState.theirCollection = compact;
+    renderTradeTheirItems();
+  });
+  tradeState.theirBoxesRef = mpWatchBoxes(f.uid, (compact) => {
+    tradeState.theirBoxes = compact;
     renderTradeTheirItems();
   });
   updateTradeSendBtn();
@@ -3409,90 +3573,152 @@ function openTradeWithFriend(idx) {
 function closeTradeBuilder() {
   document.getElementById('trade-builder').style.display = 'none';
   if (tradeState.theirCollectionRef) { tradeState.theirCollectionRef.off('value'); tradeState.theirCollectionRef = null; }
+  if (tradeState.theirBoxesRef) { tradeState.theirBoxesRef.off('value'); tradeState.theirBoxesRef = null; }
   tradeState.friendIdx = null;
   tradeState.friendUid = null;
-  mpCancelTradeOffer();
+}
+function _tradeTileHtml(kind, id, emoji, name, sub, selected, onclickFn) {
+  return `
+    <div class="trade-item ${selected ? 'selected' : ''}" onclick="${onclickFn}('${kind}','${id}')">
+      <div class="shop-emoji">${emoji}</div>
+      <div class="shop-name">${name}</div>
+      ${sub ? `<div class="shop-float">${sub}</div>` : ''}
+    </div>
+  `;
 }
 function renderTradeMyItems() {
   const el = document.getElementById('trade-my-items');
-  el.innerHTML = state.ownedEmojis.map(inst => {
+  const emojiTiles = state.ownedEmojis.map(inst => {
     const info = getEmojiInfo(inst.e);
-    const sel = tradeState.myItemId === inst.id;
-    return `
-      <div class="trade-item ${sel ? 'selected' : ''}" onclick="selectMyTradeItem('${inst.id}')">
-        <div class="shop-emoji">${inst.e}</div>
-        <div class="shop-name">${info.name}</div>
-        <div class="shop-float">${inst.float.toFixed(3)}</div>
-      </div>
-    `;
-  }).join('') || '<div class="empty-state">You own nothing to trade yet.</div>';
+    const sel = _isSelected(tradeState.mySelected, 'emoji', inst.id);
+    return _tradeTileHtml('emoji', inst.id, inst.e, info.name, inst.float.toFixed(3), sel, 'toggleMyTradeItem');
+  });
+  const boxTiles = (state.unopenedBoxes || []).map(b => {
+    const def = getBoxDef(b.boxId);
+    if (!def) return '';
+    const sel = _isSelected(tradeState.mySelected, 'box', b.id);
+    return _tradeTileHtml('box', b.id, def.icon, def.name, 'Unopened', sel, 'toggleMyTradeItem');
+  });
+  el.innerHTML = emojiTiles.join('') + boxTiles.join('') || '<div class="empty-state">You own nothing to trade yet.</div>';
 }
 function renderTradeTheirItems() {
   const el = document.getElementById('trade-their-items');
-  const ids = Object.keys(tradeState.theirCollection);
-  el.innerHTML = ids.map(id => {
+  const emojiTiles = Object.keys(tradeState.theirCollection).map(id => {
     const item = tradeState.theirCollection[id];
     const info = getEmojiInfo(item.e);
-    const sel = tradeState.theirItemId === id;
-    return `
-      <div class="trade-item ${sel ? 'selected' : ''}" onclick="selectTheirTradeItem('${id}')">
-        <div class="shop-emoji">${item.e}</div>
-        <div class="shop-name">${info.name}</div>
-        <div class="shop-float">${item.float.toFixed(3)}</div>
-      </div>
-    `;
-  }).join('') || '<div class="empty-state">They own nothing yet.</div>';
+    const sel = _isSelected(tradeState.theirSelected, 'emoji', id);
+    return _tradeTileHtml('emoji', id, item.e, info.name, item.float.toFixed(3), sel, 'toggleTheirTradeItem');
+  });
+  const boxTiles = Object.keys(tradeState.theirBoxes).map(id => {
+    const b = tradeState.theirBoxes[id];
+    const def = getBoxDef(b.boxId);
+    if (!def) return '';
+    const sel = _isSelected(tradeState.theirSelected, 'box', id);
+    return _tradeTileHtml('box', id, def.icon, def.name, 'Unopened', sel, 'toggleTheirTradeItem');
+  });
+  el.innerHTML = emojiTiles.join('') + boxTiles.join('') || '<div class="empty-state">They own nothing yet.</div>';
 }
-function selectMyTradeItem(id) {
-  tradeState.myItemId = tradeState.myItemId === id ? null : id;
+function toggleMyTradeItem(type, id) {
+  _toggleSelected(tradeState.mySelected, type, id);
   renderTradeMyItems();
   updateTradeSendBtn();
 }
-function selectTheirTradeItem(id) {
-  tradeState.theirItemId = tradeState.theirItemId === id ? null : id;
+function toggleTheirTradeItem(type, id) {
+  _toggleSelected(tradeState.theirSelected, type, id);
   renderTradeTheirItems();
   updateTradeSendBtn();
 }
 function updateTradeSendBtn() {
   const btn = document.getElementById('trade-send-btn');
   if (!btn) return;
-  if (tradeState.myItemId && tradeState.theirItemId) {
+  if (tradeState.mySelected.length > 0 && tradeState.theirSelected.length > 0) {
     btn.disabled = false;
-    btn.textContent = 'Send Trade Offer';
+    btn.textContent = `Send Offer (${tradeState.mySelected.length} for ${tradeState.theirSelected.length})`;
   } else {
     btn.disabled = true;
-    btn.textContent = 'Select one item from each side';
+    btn.textContent = 'Select at least one item from each side';
   }
 }
-function sendTradeOffer() {
-  if (!tradeState.myItemId || !tradeState.theirItemId || !tradeState.friendUid) return;
-  const myInst = getInstanceById(tradeState.myItemId);
-  const theirItem = tradeState.theirCollection[tradeState.theirItemId];
-  if (!myInst || !theirItem) { toast('Item no longer available'); return; }
-  const offerItem = { id: myInst.id, e: myInst.e, float: myInst.float };
-  const requestItem = { id: tradeState.theirItemId, e: theirItem.e, float: theirItem.float };
-  document.getElementById('trade-send-btn').disabled = true;
-  document.getElementById('trade-send-btn').textContent = 'Waiting for response…';
-  mpSendTradeOffer(tradeState.friendUid, offerItem, requestItem, (result) => {
-    if (result === 'accepted') {
-      // Apply OUR side of the swap: give away what we offered, receive what we asked for.
-      removeInstanceById(offerItem.id);
-      addEmojiInstance(requestItem.e, { source: 'trade', float: requestItem.float, fromCode: tradeState.friendUid });
-      if (state.avatarInstanceId === offerItem.id) {
+// Resolve a selection entry {type,id} into the transportable trade-item payload.
+function _resolveMyItem(sel) {
+  if (sel.type === 'box') {
+    const b = (state.unopenedBoxes || []).find(x => x.id === sel.id);
+    return b ? { type: 'box', id: b.id, boxId: b.boxId } : null;
+  }
+  const inst = getInstanceById(sel.id);
+  return inst ? { type: 'emoji', id: inst.id, e: inst.e, float: inst.float } : null;
+}
+function _resolveTheirItem(sel) {
+  if (sel.type === 'box') {
+    const b = tradeState.theirBoxes[sel.id];
+    return b ? { type: 'box', id: sel.id, boxId: b.boxId } : null;
+  }
+  const item = tradeState.theirCollection[sel.id];
+  return item ? { type: 'emoji', id: sel.id, e: item.e, float: item.float } : null;
+}
+// Apply one side of a resolved trade to local state: remove `giveItems`, add `getItems`.
+// fromCode records provenance on any emoji instances received.
+function _applyTradeSwap(giveItems, getItems, fromCode) {
+  giveItems.forEach((item) => {
+    if (item.type === 'box') {
+      const idx = state.unopenedBoxes.findIndex(b => b.id === item.id);
+      if (idx >= 0) state.unopenedBoxes.splice(idx, 1);
+    } else {
+      const wasEquipped = state.avatarInstanceId === item.id;
+      removeInstanceById(item.id);
+      if (wasEquipped) {
         const fallback = state.ownedEmojis[0];
         if (fallback) equipInstance(fallback.id);
       }
+    }
+  });
+  getItems.forEach((item) => {
+    if (item.type === 'box') {
+      state.unopenedBoxes.push({ id: _genId(), boxId: item.boxId, ts: Date.now(), source: 'trade' });
+    } else {
+      addEmojiInstance(item.e, { source: 'trade', float: item.float, fromCode });
+    }
+  });
+  state.emojisTraded = (state.emojisTraded || 0) + giveItems.length + getItems.length;
+}
+function sendTradeOffer() {
+  if (!tradeState.mySelected.length || !tradeState.theirSelected.length || !tradeState.friendUid) return;
+  const offerItems = tradeState.mySelected.map(_resolveMyItem).filter(Boolean);
+  const requestItems = tradeState.theirSelected.map(_resolveTheirItem).filter(Boolean);
+  if (offerItems.length !== tradeState.mySelected.length || requestItems.length !== tradeState.theirSelected.length) {
+    toast('Some selected items are no longer available');
+    return;
+  }
+  const friendIdx = tradeState.friendIdx;
+  const friendUid = tradeState.friendUid;
+  const friendName = (state.friends[friendIdx] && state.friends[friendIdx].name) || 'Friend';
+  document.getElementById('trade-send-btn').disabled = true;
+  document.getElementById('trade-send-btn').textContent = 'Waiting for response…';
+  const outgoingRecord = { friendUid, friendName, offer: offerItems, request: requestItems, handle: null };
+  tradeState.outgoing.push(outgoingRecord);
+  renderTrade();
+  outgoingRecord.handle = mpSendTradeOffer(friendUid, offerItems, requestItems, (result) => {
+    tradeState.outgoing = tradeState.outgoing.filter(t => t !== outgoingRecord);
+    if (result === 'accepted') {
+      _applyTradeSwap(offerItems, requestItems, friendUid);
       saveState();
       updateHeader();
       if (mp.ready) mpPushProfile();
-      toast('Trade complete! Received ' + requestItem.e, { reward: true });
+      toast('Trade complete!', { reward: true });
       closeTradeBuilder();
-      renderTrade();
     } else {
-      updateTradeSendBtn();
       toast(result === 'declined' ? 'Trade declined' : 'No response — offer expired');
     }
+    renderTrade();
   });
+}
+function cancelOutgoingTrade(idx) {
+  const t = tradeState.outgoing[idx];
+  if (!t) return;
+  mpCancelTradeOffer(t.handle);
+  tradeState.outgoing.splice(idx, 1);
+  renderTrade();
+  updateTradeSendBtn();
 }
 
 function showIncomingTrade(t) {
@@ -3504,24 +3730,22 @@ function showIncomingTrade(t) {
 function acceptTradeOffer(id) {
   const t = tradeState.incoming.find(x => x.id === id);
   if (!t) return;
-  if (!getInstanceById(t.request.id)) {
-    toast("You no longer have that item");
+  // Verify we still have everything they're asking for before accepting.
+  const stillHave = t.request.every((item) => item.type === 'box'
+    ? (state.unopenedBoxes || []).some(b => b.id === item.id)
+    : !!getInstanceById(item.id));
+  if (!stillHave) {
+    toast("You no longer have one of those items");
     declineTradeOffer(id);
     return;
   }
   mpAcceptTrade(t, () => {
-    // Apply OUR side: give away the requested item, receive their offered item.
-    removeInstanceById(t.request.id);
-    addEmojiInstance(t.offer.e, { source: 'trade', float: t.offer.float, fromCode: t.fromUid });
-    if (state.avatarInstanceId === t.request.id) {
-      const fallback = state.ownedEmojis[0];
-      if (fallback) equipInstance(fallback.id);
-    }
+    _applyTradeSwap(t.request, t.offer, t.fromUid);
     saveState();
     updateHeader();
     if (mp.ready) mpPushProfile();
     tradeState.incoming = tradeState.incoming.filter(x => x.id !== id);
-    toast('Trade complete! Received ' + t.offer.e, { reward: true });
+    toast('Trade complete!', { reward: true });
     renderTrade();
   });
 }
@@ -3669,7 +3893,7 @@ function requestFriendMatch(idx) {
       document.getElementById('pvp-searching').style.display = 'none';
       runtime.awaitingInvite = null;
       if (result === 'accepted' && info) {
-        runtime.online = { matchId: info.matchId, role: info.role, round: 1 };
+        runtime.online = { matchId: info.matchId, role: info.role, round: 1, oppUid: info.opponent.uid };
         startGame('friend', 0, 0, info.opponent.username || f.name, info.opponent.avatar || f.avatar || '🤖', PVP_TIER.bo, info.opponent.elo || 1000);
       } else {
         showView('friends'); renderFriends();
@@ -3709,7 +3933,7 @@ function acceptIncomingInvite() {
   _incomingInvite = null;
   mpAcceptInvite(inv, (info) => {
     if (!info) { toast('Failed to join match'); return; }
-    runtime.online = { matchId: info.matchId, role: info.role, round: 1 };
+    runtime.online = { matchId: info.matchId, role: info.role, round: 1, oppUid: info.opponent.uid };
     startGame('friend', 0, 0, info.opponent.username || inv.fromName, info.opponent.avatar || inv.fromAvatar || '🤖', PVP_TIER.bo, info.opponent.elo || 1000);
   });
 }
@@ -3846,8 +4070,15 @@ const BACK_ACTIONS = {
       if (TAB_RENDERERS[next]) TAB_RENDERERS[next]();
       return;
     }
-    // Secondary views: either direction just goes back, matching the back button.
+    // Secondary views: mostly "either direction goes back" — but the ELO tier list
+    // is a two-way hop (forward to leaderboard, back to lobby), so it gets its own
+    // directional handling instead of the simple BACK_ACTIONS lookup.
     const activeId = activeViewId();
+    if (activeId === 'tiers') {
+      if (dx < 0) { showView('leaderboard'); renderLeaderboard(); }
+      else { showView('lobby'); }
+      return;
+    }
     if (activeId && BACK_ACTIONS[activeId]) BACK_ACTIONS[activeId]();
   }, { passive: true });
 })();

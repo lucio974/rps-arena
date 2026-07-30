@@ -116,6 +116,7 @@ function mpPushProfile() {
     lastSeen: firebase.database.ServerValue.TIMESTAMP,
   });
   mpPushCollection();
+  mpPushBoxes();
 }
 // Push a compact public copy of the player's owned-emoji instances. Read by real
 // friend profiles and the Trade page (to browse what a friend has to offer).
@@ -127,6 +128,16 @@ function mpPushCollection() {
   });
   firebase.database().ref('collections/' + mp.uid).set(compact);
 }
+// Push a compact public copy of the player's UNOPENED boxes — lets friends see (and
+// trade for) boxes you haven't opened yet.
+function mpPushBoxes() {
+  if (!mp.ready || typeof state === 'undefined') return;
+  const compact = {};
+  (state.unopenedBoxes || []).forEach((b) => {
+    compact[b.id] = { boxId: b.boxId, ts: b.ts };
+  });
+  firebase.database().ref('boxes/' + mp.uid).set(compact);
+}
 // Live-watch another player's public collection (one-shot with ongoing updates).
 // Returns the ref so the caller can .off() it when done. cb receives a plain
 // {instanceId: {e, float, source}} map (empty object if they own nothing / not found).
@@ -135,6 +146,27 @@ function mpWatchCollection(uid, cb) {
   const ref = firebase.database().ref('collections/' + uid);
   ref.on('value', (snap) => cb(snap.val() || {}));
   return ref;
+}
+// Live-watch another player's public unopened-box inventory.
+function mpWatchBoxes(uid, cb) {
+  if (!mp.ready) return null;
+  const ref = firebase.database().ref('boxes/' + uid);
+  ref.on('value', (snap) => cb(snap.val() || {}));
+  return ref;
+}
+// Fetch the top N real players by ELO (for the real online leaderboard). Falls back
+// to an empty list (caller should use the synthetic leaderboard) if offline.
+function mpFetchTopPlayers(limit, cb) {
+  if (!mp.ready) { cb && cb([]); return; }
+  firebase.database().ref('presence').orderByChild('elo').limitToLast(limit || 20).once('value', (snap) => {
+    const list = [];
+    snap.forEach((child) => {
+      const v = child.val();
+      if (v && v.username) list.push(Object.assign({ uid: child.key }, v));
+    });
+    list.reverse(); // limitToLast returns ascending — flip to descending (highest ELO first)
+    cb && cb(list);
+  }, () => cb && cb([]));
 }
 function mpSetStatus(status, extra) {
   if (!mp.ready) return;
@@ -520,12 +552,55 @@ function mpSendTradeOffer(toUid, offerItem, requestItem, onResult) {
     }
   }, 30000);
 }
-function mpCancelTradeOffer() {
-  if (mp._pendingTrade) {
-    mp._pendingTrade.ref.off('value', mp._pendingTrade.listener);
-    mp._pendingTrade.ref.remove();
-    mp._pendingTrade = null;
-  }
+// offerItems/requestItems: arrays of {type:'emoji'|'box', id, ...}. Returns a handle
+// object with .cancel() — callers must keep it if they want to cancel THIS specific
+// offer later (supports multiple concurrent outgoing offers, unlike a single global slot).
+function mpSendTradeOffer(toUid, offerItems, requestItems, onResult) {
+  if (!mp.ready) { onResult && onResult('offline'); return null; }
+  const db = firebase.database();
+  const tRef = db.ref('trades/' + toUid).push();
+  tRef.set({
+    fromUid: mp.uid, fromName: state.username, fromAvatar: state.avatar,
+    offer: offerItems, request: requestItems,
+    status: 'pending',
+    createdAt: firebase.database.ServerValue.TIMESTAMP,
+  });
+  tRef.onDisconnect().remove();
+  let settled = false;
+  const listener = tRef.on('value', (snap) => {
+    const v = snap.val();
+    if (!v || settled) return;
+    if (v.status === 'accepted') {
+      settled = true;
+      tRef.off('value', listener);
+      tRef.remove();
+      onResult && onResult('accepted', v);
+    } else if (v.status === 'declined') {
+      settled = true;
+      tRef.off('value', listener);
+      tRef.remove();
+      onResult && onResult('declined');
+    }
+  });
+  const timeoutId = setTimeout(() => {
+    if (settled) return;
+    settled = true;
+    tRef.off('value', listener);
+    tRef.remove();
+    onResult && onResult('timeout');
+  }, 30000);
+  return {
+    cancel() {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      tRef.off('value', listener);
+      tRef.remove();
+    },
+  };
+}
+function mpCancelTradeOffer(handle) {
+  if (handle && typeof handle.cancel === 'function') handle.cancel();
 }
 // Recipient accepts — just flips the status; both sides apply the local swap
 // once they observe 'accepted' (offerer via the listener above, accepter directly).
