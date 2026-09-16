@@ -82,8 +82,10 @@ const DEFAULT_STATE = {
   weeklyPoolBucket: null,
   weeklyPoolIds: [],
   emojisTraded: 0, // total items that have changed hands via trade (give + receive both count)
+  threeStreakWinCount: 0, // matches won containing a 3-round win streak — every 5th earns a Secret Box
   collectionSortMode: 'rarity', // 'rarity' | 'float' | 'date' — cycled from Profile
   tournamentHistory: [],
+  tradeHistory: [],
   // Streak run state (persistent for a current run)
   currentStreakBot: null,
 };
@@ -114,7 +116,7 @@ const THEME_PRESETS = [
   { id: 'citron',     name: 'Citron',      base: '#F0FF80', light: '#F5FFA6' },
   { id: 'peach',      name: 'Peach',       base: '#FFC981', light: '#FFD9A7' },
   { id: 'mauve',      name: 'Mauve',       base: '#BD6699', light: '#D194B8' },
-  { id: 'violet',     name: 'Violet',      base: '#6A6699', light: '#9794B8' },
+  { id: 'violet',     name: 'Purple',      base: '#6A6699', light: '#9794B8' },
 ];
 
 // Compute a lighter companion color from a hex by lerping toward white by 30%.
@@ -1012,6 +1014,20 @@ function endGame(g) {
 
       // ── Box drops (independent rolls — a lucky win can drop more than one) ──
       rollWinBoxDrops(1);
+
+      // ── Think Box: every 10 consecutive PvP wins ──
+      if (state.currentPvpStreak > 0 && state.currentPvpStreak % 10 === 0) {
+        state.unopenedBoxes.push({ id: _genId(), boxId: 'think', ts: Date.now(), source: 'streak' });
+        setTimeout(() => toast('💭 Think Box earned! Open it from Profile.', { reward: true }), 1450);
+      }
+      // ── Secret Box: every 5th match won that contained a 3-round win streak ──
+      if (hasThreeConsecutiveWins(g.outcomes)) {
+        state.threeStreakWinCount = (state.threeStreakWinCount || 0) + 1;
+        if (state.threeStreakWinCount % 5 === 0) {
+          state.unopenedBoxes.push({ id: _genId(), boxId: 'secret', ts: Date.now(), source: 'streak' });
+          setTimeout(() => toast('\uFFFD Secret Box earned! Open it from Profile.', { reward: true }), 1550);
+        }
+      }
       if (mp.ready) mpPushBoxes();
 
       // ── 1% chance: random emoji you don't yet own ──
@@ -1416,14 +1432,15 @@ function renderHostInvites() {
   }
   const atCap = selectedCount >= HOST_INVITE_MAX;
   list.innerHTML = friends.map((f, idx) => {
+    const disp = friendDisplay(f);
     const isSelected = _hostInvitesSelected.includes(idx);
     const cls = 'host-invite-item' +
       (isSelected ? ' selected' : '') +
       (!isSelected && atCap ? ' disabled' : '');
     return `
       <div class="${cls}" onclick="toggleHostInvite(${idx})">
-        <div class="host-invite-avatar">${f.avatar || '🤖'}</div>
-        <div class="host-invite-name">${f.name}</div>
+        <div class="host-invite-avatar">${disp.avatar}</div>
+        <div class="host-invite-name">${disp.name}</div>
         <div class="host-invite-check">${isSelected ? '✓' : ''}</div>
       </div>
     `;
@@ -2210,9 +2227,9 @@ const CHALLENGE_DEFS = [
     id: 'tourney_25',
     emoji: '🩻',
     name: 'See Through',
-    desc: 'Win 25 tournaments.',
+    desc: 'Win 50 tournaments.',
     rarity: 'mythical',
-    progress: () => [{ current: Math.min(state.tourneysWon || 0, 25), goal: 25, label: 'tournaments won' }],
+    progress: () => [{ current: Math.min(state.tourneysWon || 0, 50), goal: 50, label: 'tournaments won' }],
   },
   {
     id: 'collector_10',
@@ -2479,12 +2496,29 @@ const LOOT_BOXES = [
 // the other 90% falls back to a legendary-weighted consolation pull from this week's pool.
 const LIMITED_BOX = {
   id: 'limited', name: 'Limited Box', price: 150, icon: '📇',
-  pool: ['🧩','🖼️','✉️','📞','🪨','📸','🪷','🍰','🎞️','🌙','🥶','📇'],
+  pool: ['🧩','🖼️','✉️','📞','🪨','📸','🪷','🍰','🎞️','🌙','🥶','📇','\uFFFD'],
   mythicalChance: 0.1,
+};
+// Earned-only boxes — never purchasable in the shop, only awarded automatically for
+// specific play patterns (see rollWinBoxDrops-adjacent checks in endGame's pvp branch).
+const EARNED_BOXES = {
+  think:  { id: 'think',  name: 'Think Box',  icon: '💭',     weights: { common: 30, rare: 45, epic: 22, legendary: 3 } },
+  secret: { id: 'secret', name: 'Secret Box', icon: '\uFFFD', weights: { common: 10, rare: 30, epic: 40, legendary: 20 } },
 };
 function getBoxDef(boxId) {
   if (boxId === 'limited') return LIMITED_BOX;
+  if (EARNED_BOXES[boxId]) return EARNED_BOXES[boxId];
   return LOOT_BOXES.find(b => b.id === boxId);
+}
+// A "clean" match win with a 3-in-a-row round streak somewhere inside it — used by
+// the Secret Box trigger below.
+function hasThreeConsecutiveWins(outcomes) {
+  let streak = 0;
+  for (const o of (outcomes || [])) {
+    if (o === 'W') { streak++; if (streak >= 3) return true; }
+    else streak = 0;
+  }
+  return false;
 }
 // Independent-roll box drops after a match win. `mult` scales the base PvP rates
 // (7%/5%/1%/0.5% for classic/mystery/lucky/limited) — e.g. 0.5 for friendlies.
@@ -2509,11 +2543,18 @@ function rollWinBoxDrops(mult) {
 }
 // Mythical emojis are exclusive to the Limited Box — always resolve to the Mythical
 // tier and are excluded from every other pool (standard boxes, weekly rotation, etc.)
+// Named explicitly rather than relying on catalog lookup — not all 12 have catalog
+// entries (🎞️ has none at all, which used to leave it displaying as a raw character).
+const MYTHICAL_NAMES = {
+  '🧩': 'Puzzle Piece', '🖼️': 'Picture', '✉️': 'Envelope', '📞': 'Telephone',
+  '🪨': 'Rock', '📸': 'Flash Camera', '🪷': 'Lotus', '🍰': 'Cake Slice',
+  '🎞️': 'Film Frames', '🌙': 'Moon', '🥶': 'Cold', '📇': 'Card Index',
+  '\uFFFD': 'Corrupted',
+};
 function getMythicalOverrides() {
   const map = {};
   LIMITED_BOX.pool.forEach((e) => {
-    const catalogEntry = EMOJI_CATALOG.find(x => x.e === e);
-    map[e] = { e, name: (catalogEntry && catalogEntry.name) || e, cat: 'mythical', price: 0, rarity: 'mythical' };
+    map[e] = { e, name: MYTHICAL_NAMES[e] || e, cat: 'mythical', price: 0, rarity: 'mythical' };
   });
   return map;
 }
@@ -2667,8 +2708,7 @@ function previewLootBox(boxId) {
     ${oddsHtml}
     <div style="font-size:10px;color:var(--muted);text-align:center">Sample of what's in the pool right now:</div>
     ${sampleHtml}
-  `, () => buyLootBox(boxId));
-  document.getElementById('modal-confirm-btn').textContent = 'Buy · ▣ ' + box.price;
+  `, () => buyLootBox(boxId), 'Buy · ▣ ' + box.price);
 }
 function buyLootBox(boxId) {
   const box = getBoxDef(boxId);
@@ -2685,7 +2725,6 @@ function buyLootBox(boxId) {
   renderShop();
   if (mp.ready) mpPushBoxes();
   toast(box.icon + ' ' + box.name + ' added to your inventory — open it from Profile!');
-  document.getElementById('modal-confirm-btn').textContent = 'Confirm';
 }
 
 /* ---- INSPECT + OPEN (from Profile inventory): preview first, then 4s cycling reveal ---- */
@@ -2730,8 +2769,7 @@ function inspectUnopenedBox(instId) {
     <div style="font-size:9px;color:var(--muted);text-align:center;margin-bottom:6px">Box ID: ${boxRec.id} · from ${boxRec.source || 'unknown'}</div>
     <div style="font-size:10px;color:var(--muted);text-align:center">Sample of what's in the pool right now:</div>
     ${sampleHtml}
-  `, () => openBoxInstance(instId));
-  document.getElementById('modal-confirm-btn').textContent = 'Open Now';
+  `, () => openBoxInstance(instId), 'Open Now');
 }
 function openBoxInstance(instId) {
   const idx = state.unopenedBoxes.findIndex((b) => b.id === instId);
@@ -2770,6 +2808,8 @@ function showBoxOpeningAnimation(box, onDone) {
     onDone(chosen, floatVal);
   }, 4000);
 }
+// After unboxing: "Equip Now" equips the new instance immediately, "Keep" just
+// dismisses the popup and leaves it sitting in your collection unequipped.
 function showBoxRevealPopup(box, item, inst) {
   const label = floatLabel(inst.float);
   openModal(box.icon + ' ' + box.name + ' opened!', `
@@ -2779,7 +2819,7 @@ function showBoxRevealPopup(box, item, inst) {
       <span class="shop-rarity-header ${item.rarity}" style="justify-content:center;margin-top:4px">${item.rarity.toUpperCase()}</span><br>
       <span style="font-size:11px;color:var(--muted)">Float ${inst.float.toFixed(3)} · ${label}</span>
     </div>
-  `, () => {});
+  `, () => equipInstanceUI(inst.id), 'Equip Now', 'Keep');
 }
 
 // Emojis that can ONLY be unlocked through challenges (never browsable, never featured, never random rewards)
@@ -2859,10 +2899,12 @@ function getShopPool() {
 }
 
 /* ---- MODAL & BUY ---- */
-function openModal(title, body, cb) {
+function openModal(title, body, cb, confirmLabel, cancelLabel) {
   document.getElementById('modal-title').textContent = title;
   document.getElementById('modal-body').innerHTML = body;
   runtime.modalCb = cb;
+  document.getElementById('modal-confirm-btn').textContent = confirmLabel || 'Confirm';
+  document.getElementById('modal-cancel-btn').textContent = cancelLabel || 'Cancel';
   document.getElementById('modal-overlay').classList.add('open');
 }
 function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
@@ -3096,11 +3138,24 @@ function renderFriends() {
     if (document.getElementById('view-friends').classList.contains('active')) renderFriends();
   });
 
+// Resolve a friend's CURRENT display name/avatar: real online-linked friends prefer
+// live presence data (kept fresh by mpWatchFriendPresence), so if they change their
+// equipped emoji or display name, it updates everywhere they're shown — friends list,
+// trade picker, host-invite picker — without needing to re-add them.
+function friendDisplay(f) {
+  if (f.uid && mp.friendPresence[f.uid]) {
+    const p = mp.friendPresence[f.uid];
+    return { name: p.username || f.name, avatar: p.avatar || f.avatar || '🤖' };
+  }
+  return { name: f.name, avatar: f.avatar || '🤖' };
+}
+
   if (!state.friends || state.friends.length === 0) {
     list.innerHTML = '<div class="empty-state">No friends yet.<br>Add someone by friend code, or a local demo friend below.</div>';
     return;
   }
   list.innerHTML = state.friends.map((f, idx) => {
+    const disp = friendDisplay(f);
     const online = isFriendOnline(f);
     const statusClass = online ? 'online' : 'offline';
     const statusText = online ? 'Online' : 'Offline';
@@ -3111,9 +3166,9 @@ function renderFriends() {
       : '';
     return `
       <div class="friend-item friend-item-clickable" onclick="openFriendProfile(${idx})">
-        <div class="friend-avatar">${f.avatar || '🤖'}</div>
+        <div class="friend-avatar">${disp.avatar}</div>
         <div class="friend-info">
-          <div class="friend-name">${f.name}</div>
+          <div class="friend-name">${disp.name}</div>
           <div class="friend-meta">Added ${f.addedAt || 'recently'}${linkTag}</div>
         </div>
         <div class="friend-actions">
@@ -3512,6 +3567,87 @@ function renderOwnedCollectionHtml(items, opts) {
    One-item-for-one-item trades, real online friends only (added by Friend Code).
    Both sides apply the swap locally once a trade is accepted — see mpAcceptTrade /
    mpSendTradeOffer in multiplayer.js for the underlying Firebase exchange. */
+/* ---- CRAFT (trade with yourself) ----
+   Consume 5 owned instances of the same rarity to receive 1 random instance of
+   the rarity tier above. Crafting into Mythical draws from the Limited Box's
+   12-emoji pool, same as a genuine Mythical pull. */
+const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary', 'mythical'];
+function getCraftableCounts() {
+  const counts = { common: 0, rare: 0, epic: 0, legendary: 0 };
+  state.ownedEmojis.forEach(inst => {
+    const info = getEmojiInfo(inst.e);
+    if (counts[info.rarity] !== undefined) counts[info.rarity]++;
+  });
+  return counts;
+}
+function renderCraftSection() {
+  const el = document.getElementById('craft-section');
+  if (!el) return;
+  const counts = getCraftableCounts();
+  el.innerHTML = ['common', 'rare', 'epic', 'legendary'].map((tier, i) => {
+    const nextTier = RARITY_ORDER[i + 1];
+    const have = counts[tier] || 0;
+    const canCraft = have >= 5;
+    return `
+      <div class="craft-row">
+        <div class="craft-row-info">
+          <div><span class="shop-action ${tier}">${tier.toUpperCase()}</span> ×5 → <span class="shop-action ${nextTier}">${nextTier.toUpperCase()}</span> ×1</div>
+          <div style="font-size:10px;color:var(--muted)">You have ${have} ${tier}</div>
+        </div>
+        <button class="lootbox-open-btn" style="width:auto;padding:8px 14px" onclick="craftEmojis('${tier}')" ${canCraft ? '' : 'disabled'}>Craft</button>
+      </div>
+    `;
+  }).join('');
+}
+function craftEmojis(tier) {
+  const idx = RARITY_ORDER.indexOf(tier);
+  const nextTier = RARITY_ORDER[idx + 1];
+  if (!nextTier) { toast('Nothing to craft into'); return; }
+  const matching = state.ownedEmojis.filter(inst => getEmojiInfo(inst.e).rarity === tier);
+  if (matching.length < 5) { toast('Need 5 ' + tier + ' emojis'); return; }
+  const toConsume = matching.slice().sort((a, b) => (a.ts || 0) - (b.ts || 0)).slice(0, 5);
+  toConsume.forEach(inst => {
+    const wasEquipped = state.avatarInstanceId === inst.id;
+    removeInstanceById(inst.id);
+    if (wasEquipped) {
+      const fallback = state.ownedEmojis[0];
+      if (fallback) equipInstance(fallback.id);
+    }
+  });
+  let rewardEmoji;
+  if (nextTier === 'mythical') {
+    rewardEmoji = LIMITED_BOX.pool[Math.floor(Math.random() * LIMITED_BOX.pool.length)];
+  } else {
+    const weekly = getWeeklyPool().map(e => getEmojiInfo(e)).filter(e => e.rarity === nextTier);
+    const pool = weekly.length ? weekly : getShopPool().filter(e => e.rarity === nextTier);
+    rewardEmoji = pool.length ? pool[Math.floor(Math.random() * pool.length)].e : null;
+  }
+  if (!rewardEmoji) { toast('Nothing available to craft into right now'); return; }
+  const inst = addEmojiInstance(rewardEmoji, { source: 'craft' });
+  if (!state.tradeHistory) state.tradeHistory = [];
+  state.tradeHistory.unshift({
+    withName: 'Yourself',
+    gave: [tier.toUpperCase() + ' ×5'],
+    got: [rewardEmoji],
+    time: new Date().toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+  });
+  if (state.tradeHistory.length > 50) state.tradeHistory = state.tradeHistory.slice(0, 50);
+  saveState();
+  updateHeader();
+  if (mp.ready) mpPushProfile();
+  renderCraftSection();
+  const info = getEmojiInfo(rewardEmoji);
+  openModal('✨ Crafted!', `
+    <div style="font-size:56px;text-align:center;margin:10px 0">${rewardEmoji}</div>
+    <div style="text-align:center">
+      <strong>${info.name}</strong><br>
+      <span class="shop-rarity-header ${info.rarity}" style="justify-content:center;margin-top:4px">${info.rarity.toUpperCase()}</span><br>
+      <span style="font-size:11px;color:var(--muted)">Float ${inst.float.toFixed(3)} · ${floatLabel(inst.float)}</span>
+    </div>
+  `, () => equipInstanceUI(inst.id), 'Equip Now', 'Keep');
+  if (navigator.vibrate) navigator.vibrate([30, 50, 30, 50, 60]);
+}
+
 let tradeState = {
   friendIdx: null,
   friendUid: null,
@@ -3542,6 +3678,7 @@ function _toggleSelected(arr, type, id) {
 }
 
 function renderTrade() {
+  renderCraftSection();
   const wrap = document.getElementById('trade-incoming-wrap');
   const list = document.getElementById('trade-incoming-list');
   if (tradeState.incoming.length > 0) {
@@ -3592,11 +3729,12 @@ function renderTrade() {
   } else {
     flist.innerHTML = onlineFriends.map(f => {
       const idx = state.friends.indexOf(f);
+      const disp = friendDisplay(f);
       return `
         <div class="friend-item friend-item-clickable trade-friend-row" onclick="openTradeWithFriend(${idx})">
-          <div class="friend-avatar">${f.avatar || '🤖'}</div>
+          <div class="friend-avatar">${disp.avatar}</div>
           <div class="friend-info">
-            <div class="friend-name">${f.name}</div>
+            <div class="friend-name">${disp.name}</div>
             <div class="friend-meta">Tap to build a trade offer</div>
           </div>
         </div>
@@ -3612,7 +3750,7 @@ function openTradeWithFriend(idx) {
   tradeState.friendUid = f.uid;
   tradeState.mySelected = [];
   tradeState.theirSelected = [];
-  document.getElementById('trade-builder-title').textContent = 'Trade with ' + f.name;
+  document.getElementById('trade-builder-title').textContent = 'Trade with ' + friendDisplay(f).name;
   document.getElementById('trade-builder').style.display = 'block';
   showView('trade');
   renderTradeMyItems();
@@ -3720,7 +3858,7 @@ function _resolveTheirItem(sel) {
 }
 // Apply one side of a resolved trade to local state: remove `giveItems`, add `getItems`.
 // fromCode records provenance on any emoji instances received.
-function _applyTradeSwap(giveItems, getItems, fromCode) {
+function _applyTradeSwap(giveItems, getItems, fromCode, withName) {
   giveItems.forEach((item) => {
     if (item.type === 'box') {
       const idx = state.unopenedBoxes.findIndex(b => b.id === item.id);
@@ -3742,6 +3880,31 @@ function _applyTradeSwap(giveItems, getItems, fromCode) {
     }
   });
   state.emojisTraded = (state.emojisTraded || 0) + giveItems.length + getItems.length;
+  if (!state.tradeHistory) state.tradeHistory = [];
+  state.tradeHistory.unshift({
+    withName: withName || 'Unknown',
+    gave: giveItems.map(_tradeItemLabel),
+    got: getItems.map(_tradeItemLabel),
+    time: new Date().toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+  });
+  if (state.tradeHistory.length > 50) state.tradeHistory = state.tradeHistory.slice(0, 50);
+}
+function showTradeHistory() {
+  const hist = state.tradeHistory || [];
+  if (hist.length === 0) {
+    openModal('Trade History', '<div class="empty-state">No trades completed yet.</div>', () => {});
+    return;
+  }
+  const rows = hist.map(h => `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+      <div style="font-size:20px">↔</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:12px">${h.withName === 'Yourself' ? 'Crafted' : 'Traded with ' + h.withName}</div>
+        <div style="font-size:10px;color:var(--muted)">Gave ${h.gave.join(' ')} · Got ${h.got.join(' ')} · ${h.time}</div>
+      </div>
+    </div>
+  `).join('');
+  openModal('Trade History', `<div style="max-height:400px;overflow-y:auto">${rows}</div>`, () => {});
 }
 function sendTradeOffer() {
   if (!tradeState.mySelected.length || !tradeState.theirSelected.length || !tradeState.friendUid) return;
@@ -3762,7 +3925,7 @@ function sendTradeOffer() {
   outgoingRecord.handle = mpSendTradeOffer(friendUid, offerItems, requestItems, (result) => {
     tradeState.outgoing = tradeState.outgoing.filter(t => t !== outgoingRecord);
     if (result === 'accepted') {
-      _applyTradeSwap(offerItems, requestItems, friendUid);
+      _applyTradeSwap(offerItems, requestItems, friendUid, friendName);
       saveState();
       updateHeader();
       if (mp.ready) mpPushProfile();
@@ -3802,7 +3965,7 @@ function acceptTradeOffer(id) {
     return;
   }
   mpAcceptTrade(t, () => {
-    _applyTradeSwap(t.request, t.offer, t.fromUid);
+    _applyTradeSwap(t.request, t.offer, t.fromUid, t.fromName);
     saveState();
     updateHeader();
     if (mp.ready) mpPushProfile();
@@ -4100,7 +4263,7 @@ const BACK_ACTIONS = {
     if (e.touches.length !== 1) return;
     if (inGame()) return;
     // Don't start swipe-tab tracking on horizontal-scroll surfaces (shop tabs, bracket)
-    if (e.target.closest('.shop-tabs, .bracket-wrap')) return;
+    if (e.target.closest('.shop-tabs, .bracket-wrap, .mode-grid')) return;
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
     tracking = true;

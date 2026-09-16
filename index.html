@@ -79,9 +79,11 @@
   .elo-progress-fill{height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-light));border-radius:3px;transition:width .5s ease}
   .elo-progress-labels{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:6px;letter-spacing:.05em}
 
-  .mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .mode-grid{display:flex;gap:12px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px;scroll-snap-type:x proximity}
+  .mode-grid::-webkit-scrollbar{display:none}
   .mode-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;
-    padding:16px;cursor:pointer;transition:.15s;position:relative;overflow:hidden;-webkit-user-select:none}
+    padding:16px;cursor:pointer;transition:.15s;position:relative;overflow:hidden;-webkit-user-select:none;
+    flex:0 0 auto;width:70vw;max-width:220px;scroll-snap-align:start}
   .mode-card:active{transform:scale(.97);background:var(--surface2)}
   .mode-card.featured{border-color:var(--gold)}
   .mode-icon{font-size:32px;margin-bottom:10px}
@@ -473,6 +475,8 @@
   .trade-incoming-swap{display:flex;align-items:center;justify-content:center;gap:14px;font-size:28px}
   .trade-incoming-btns{display:flex;gap:8px}
   .trade-incoming-btns button{flex:1;padding:9px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer}
+  .craft-row{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .craft-row-info{font-size:12px;font-weight:600}
 
   .shop-featured{background:linear-gradient(135deg,rgba(var(--gold-rgb),.1),rgba(79,142,247,.05));
     border:1px solid var(--gold);border-radius:14px;padding:14px;margin-bottom:14px}
@@ -836,9 +840,14 @@
     <div class="view" id="view-trade">
       <div class="back-bar">
         <button onclick="showView('lobby')">← Back</button>
-        <div style="font-weight:700">Trade</div>
+        <div style="font-weight:700;flex:1">Trade</div>
+        <button class="host-tourney-btn" style="background:var(--surface2);border:1px solid var(--border);color:var(--muted)" onclick="showTradeHistory()">History</button>
       </div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:6px;line-height:1.4">Trade emojis with a real online friend. Only works with friends added by Friend Code.</div>
+
+      <div class="section-title">Craft (Trade With Yourself)</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Combine 5 of the same rarity into 1 of the rarity above.</div>
+      <div id="craft-section" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
 
       <div id="trade-incoming-wrap" style="display:none">
         <div class="section-title">Incoming Offers</div>
@@ -1063,7 +1072,7 @@
     <h3 id="modal-title">Confirm</h3>
     <div id="modal-body" style="font-size:13px;color:var(--muted);line-height:1.6"></div>
     <div class="modal-btns">
-      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-cancel" id="modal-cancel-btn" onclick="closeModal()">Cancel</button>
       <button class="btn-confirm" id="modal-confirm-btn">Confirm</button>
     </div>
   </div>
