@@ -2781,7 +2781,7 @@ function openBoxInstance(instId) {
   saveState();
   renderUnopenedBoxes();
   if (mp.ready) mpPushBoxes();
-  showBoxOpeningAnimation(box, (chosen, floatVal) => {
+  showBoxOpeningInModal(box, (chosen, floatVal) => {
     const inst = addEmojiInstance(chosen.e, { source: box.id + '-box', float: floatVal });
     saveState();
     updateHeader();
@@ -2791,18 +2791,25 @@ function openBoxInstance(instId) {
     if (navigator.vibrate) navigator.vibrate(chosen.rarity === 'mythical' ? [50, 70, 50, 70, 120] : chosen.rarity === 'legendary' ? [40, 60, 40, 60, 100] : chosen.rarity === 'epic' ? [20, 40, 20] : [15, 30]);
   });
 }
-function showBoxOpeningAnimation(box, onDone) {
+// Cycling animation reuses the SAME generic modal the preview/inspect step was already
+// showing — content just transitions in place (preview → cycling → reveal) rather than
+// swapping to a separate overlay element.
+function showBoxOpeningInModal(box, onDone) {
   const pool = box.id === 'limited' ? box.pool.map((e) => getEmojiInfo(e)) : getWeeklyPool().map((e) => getEmojiInfo(e));
-  document.getElementById('box-opening-title').textContent = box.icon + ' Opening ' + box.name + '…';
-  const cycleEl = document.getElementById('box-cycle-emoji');
-  cycleEl.textContent = pool.length ? pool[0].e : '❓';
-  document.getElementById('box-opening-overlay').classList.add('open');
+  openModal(box.icon + ' Opening ' + box.name + '…', `
+    <div class="box-cycle-emoji-inline" id="box-cycle-emoji-inline">${pool.length ? pool[0].e : '❓'}</div>
+    <div style="font-size:11px;color:var(--muted);text-align:center">Rolling…</div>
+  `, () => {});
+  document.getElementById('modal-confirm-btn').style.display = 'none';
+  document.getElementById('modal-cancel-btn').style.display = 'none';
+  const cycleEl = document.getElementById('box-cycle-emoji-inline');
   const iv = setInterval(() => {
-    if (pool.length) cycleEl.textContent = pool[Math.floor(Math.random() * pool.length)].e;
+    if (pool.length && cycleEl) cycleEl.textContent = pool[Math.floor(Math.random() * pool.length)].e;
   }, 90);
   setTimeout(() => {
     clearInterval(iv);
-    document.getElementById('box-opening-overlay').classList.remove('open');
+    document.getElementById('modal-confirm-btn').style.display = '';
+    document.getElementById('modal-cancel-btn').style.display = '';
     const chosen = rollBoxContents(box);
     const floatVal = rollFloat();
     onDone(chosen, floatVal);
@@ -3594,18 +3601,73 @@ function renderCraftSection() {
           <div><span class="shop-action ${tier}">${tier.toUpperCase()}</span> ×5 → <span class="shop-action ${nextTier}">${nextTier.toUpperCase()}</span> ×1</div>
           <div style="font-size:10px;color:var(--muted)">You have ${have} ${tier}</div>
         </div>
-        <button class="lootbox-open-btn" style="width:auto;padding:8px 14px" onclick="craftEmojis('${tier}')" ${canCraft ? '' : 'disabled'}>Craft</button>
+        <button class="lootbox-open-btn" style="width:auto;padding:8px 14px" onclick="openCraftPicker('${tier}')" ${canCraft ? '' : 'disabled'}>Craft</button>
       </div>
     `;
   }).join('');
 }
-function craftEmojis(tier) {
+
+// Picking which 5 go in — rather than always auto-consuming the oldest 5.
+let craftSelection = { tier: null, selectedIds: [] };
+function openCraftPicker(tier) {
+  const matching = state.ownedEmojis.filter(inst => getEmojiInfo(inst.e).rarity === tier);
+  if (matching.length < 5) { toast('Need 5 ' + tier + ' emojis'); return; }
+  craftSelection = { tier, selectedIds: [] };
+  renderCraftPicker();
+  document.getElementById('craft-picker-modal').classList.add('open');
+}
+function renderCraftPicker() {
+  const tier = craftSelection.tier;
+  const idx = RARITY_ORDER.indexOf(tier);
+  const nextTier = RARITY_ORDER[idx + 1];
+  const matching = state.ownedEmojis.filter(inst => getEmojiInfo(inst.e).rarity === tier);
+  document.getElementById('craft-picker-title').textContent = `Select 5 ${tier.toUpperCase()} → 1 ${nextTier.toUpperCase()}`;
+  document.getElementById('craft-picker-grid').innerHTML = matching.map(inst => {
+    const info = getEmojiInfo(inst.e);
+    const sel = craftSelection.selectedIds.includes(inst.id);
+    return `
+      <div class="trade-item ${sel ? 'selected' : ''}" onclick="toggleCraftSelection('${inst.id}')">
+        <div class="shop-emoji">${inst.e}</div>
+        <div class="shop-name">${info.name}</div>
+        <div class="shop-float">${inst.float.toFixed(3)}</div>
+      </div>
+    `;
+  }).join('');
+  document.getElementById('craft-picker-count').textContent = craftSelection.selectedIds.length + '/5 selected';
+  document.getElementById('craft-picker-confirm').disabled = craftSelection.selectedIds.length !== 5;
+}
+function toggleCraftSelection(id) {
+  const i = craftSelection.selectedIds.indexOf(id);
+  if (i >= 0) {
+    craftSelection.selectedIds.splice(i, 1);
+  } else {
+    if (craftSelection.selectedIds.length >= 5) { toast('Already selected 5 — deselect one first'); return; }
+    craftSelection.selectedIds.push(id);
+  }
+  renderCraftPicker();
+}
+function closeCraftPicker() {
+  document.getElementById('craft-picker-modal').classList.remove('open');
+  craftSelection = { tier: null, selectedIds: [] };
+}
+function confirmCraft() {
+  if (craftSelection.selectedIds.length !== 5) return;
+  craftEmojis(craftSelection.tier, craftSelection.selectedIds);
+  closeCraftPicker();
+}
+function craftEmojis(tier, selectedIds) {
   const idx = RARITY_ORDER.indexOf(tier);
   const nextTier = RARITY_ORDER[idx + 1];
   if (!nextTier) { toast('Nothing to craft into'); return; }
-  const matching = state.ownedEmojis.filter(inst => getEmojiInfo(inst.e).rarity === tier);
-  if (matching.length < 5) { toast('Need 5 ' + tier + ' emojis'); return; }
-  const toConsume = matching.slice().sort((a, b) => (a.ts || 0) - (b.ts || 0)).slice(0, 5);
+  let toConsume;
+  if (selectedIds && selectedIds.length === 5) {
+    toConsume = selectedIds.map(id => getInstanceById(id)).filter(Boolean);
+    if (toConsume.length !== 5) { toast('Some selected items are no longer available'); return; }
+  } else {
+    const matching = state.ownedEmojis.filter(inst => getEmojiInfo(inst.e).rarity === tier);
+    if (matching.length < 5) { toast('Need 5 ' + tier + ' emojis'); return; }
+    toConsume = matching.slice().sort((a, b) => (a.ts || 0) - (b.ts || 0)).slice(0, 5);
+  }
   toConsume.forEach(inst => {
     const wasEquipped = state.avatarInstanceId === inst.id;
     removeInstanceById(inst.id);
@@ -4263,7 +4325,7 @@ const BACK_ACTIONS = {
     if (e.touches.length !== 1) return;
     if (inGame()) return;
     // Don't start swipe-tab tracking on horizontal-scroll surfaces (shop tabs, bracket)
-    if (e.target.closest('.shop-tabs, .bracket-wrap, .mode-grid')) return;
+    if (e.target.closest('.shop-tabs, .bracket-wrap')) return;
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
     tracking = true;
